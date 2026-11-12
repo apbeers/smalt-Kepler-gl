@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // The tech demo: generated datasets from thousands to millions of rows, every layer and option, GPU filters and
 // playback, and the numbers for each step, measured on the visitor's machine.
-import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import type { SmaltMap, Basemap, Layer, GpuFilter, Projected, ScatterLayer, HeatmapLayer, AggregateLayer, ArcLayer, PathLayer, PolygonLayer } from '@smaltworks/smaltgl'
 import type { Dataset, PointsDataset, ArcsDataset, PathsDataset, PolygonsDataset } from '@smaltworks/smaltgl/datasets'
-import { DEMO_DATASETS, SQL_PRESETS, CYPHER_PRESETS, type DemoDataset, type LayerKind } from '../demo-datasets'
+import { DEMO_DATASETS, SQL_PRESETS, CYPHER_PRESETS, type DemoDataset, type LayerKind, type Preset } from '../demo-datasets'
 
 type GL = typeof import('@smaltworks/smaltgl')
 let gl: GL
@@ -105,6 +105,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   s.playing = false
+  orbiting.value = false
   map?.destroy()
 })
 
@@ -599,6 +600,45 @@ watch(() => s.speed, () => {
 })
 
 // ---------------------------------------------------------------------------------------------------------------------
+// Presets and the orbit
+
+async function applyPreset(p: Preset): Promise<void> {
+  const { playing, ...rest } = p.state
+  s.playing = false
+  // The filter column first: choosing it resets the range, which the preset then sets.
+  const { filter, ...others } = rest
+  if (filter !== undefined) s.filter = String(filter)
+  Object.assign(s, others)
+  if (p.view) {
+    map?.setView({ ...(p.view.center ? { center: p.view.center as [number, number] } : {}), ...p.view })
+    s.pitch = p.view.pitch ?? 0
+  }
+  await nextTick()
+  while (busy.value) await new Promise((r) => setTimeout(r, 100))
+  await new Promise((r) => setTimeout(r, 100))
+  if (playing) s.playing = true
+}
+
+const orbiting = ref(false)
+let orbitFrame = 0
+function toggleOrbit(): void {
+  orbiting.value = !orbiting.value
+  cancelAnimationFrame(orbitFrame)
+  if (!orbiting.value || !map) return
+  if (s.pitch < 30) s.pitch = 45
+  let last = performance.now()
+  const step = (now: number) => {
+    if (!orbiting.value || !map) return
+    // A full turn a minute.
+    const v = map.getView()
+    map.setView({ bearing: (v.bearing ?? 0) + ((now - last) / 1000) * 6 })
+    last = now
+    orbitFrame = requestAnimationFrame(step)
+  }
+  orbitFrame = requestAnimationFrame(step)
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // The benchmark: a camera tour, each frame waited for on the GPU
 
 async function benchmark(): Promise<void> {
@@ -723,6 +763,10 @@ const layerNames: Record<LayerKind, string> = { scatter: 'Points', heatmap: 'Hea
         </select>
       </label>
       <p class="about">{{ ds.about }}</p>
+      <div v-if="ds.presets?.length" class="presets-row" aria-label="Try">
+        <span>Try</span>
+        <button v-for="p in ds.presets" :key="p.title" type="button" class="chip" data-test="preset" @click="applyPreset(p)">{{ p.title }}</button>
+      </div>
 
       <div class="field">
         <span>{{ ds.source === 'fleet' ? 'Vehicles' : ds.source === 'districts' ? 'Districts (about)' : ds.source === 'smaltcy' ? 'Stores' : 'Rows' }}</span>
@@ -850,6 +894,7 @@ const layerNames: Record<LayerKind, string> = { scatter: 'Points', heatmap: 'Hea
       <div class="buttons">
         <button type="button" @click="fit">Fit to data</button>
         <button type="button" @click="copyLink" data-test="link">{{ copied ? 'Copied' : 'Copy link' }}</button>
+        <button type="button" :class="{ on: orbiting }" @click="toggleOrbit" data-test="orbit">{{ orbiting ? 'Stop orbit' : 'Orbit' }}</button>
         <button type="button" @click="benchmark" data-test="bench">Benchmark</button>
       </div>
     </aside>
@@ -902,6 +947,11 @@ input[type='range'] { width: 100%; accent-color: var(--vp-c-brand-1); }
 .seg button, .buttons button, .go { padding: 3px 10px; border: 1px solid var(--vp-c-divider); border-radius: 6px; background: transparent; color: var(--vp-c-text-1); font-weight: 500; font-size: 13px; cursor: pointer; }
 .seg button.on, .go { background: var(--vp-c-brand-1); border-color: var(--vp-c-brand-1); color: var(--vp-c-white); }
 .seg button:hover, .buttons button:hover { border-color: var(--vp-c-brand-1); }
+.presets-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -6px 0 14px; }
+.presets-row > span { font-family: var(--font-brand, 'Martian Mono', monospace); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--vp-c-text-2); margin-right: 2px; }
+.chip { padding: 2px 10px; border: 1px solid var(--vp-c-brand-1); border-radius: 999px; background: transparent; color: var(--vp-c-brand-1); font-size: 12.5px; font-weight: 500; cursor: pointer; }
+.chip:hover { background: var(--vp-c-brand-1); color: var(--vp-c-white); }
+.buttons button.on { background: var(--vp-c-brand-1); border-color: var(--vp-c-brand-1); color: var(--vp-c-white); }
 .checks { display: flex; flex-direction: column; gap: 4px; margin: -4px 0 14px; color: var(--vp-c-text-1); }
 .checks label { display: flex; gap: 6px; align-items: center; }
 .range { display: grid; gap: 2px; }

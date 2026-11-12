@@ -25,6 +25,14 @@ export interface DemoDataset {
   readonly radius?: number
   readonly cellSize?: number
   readonly opacity?: number
+  /** One-click views worth seeing: settings, and where to look. */
+  readonly presets?: readonly Preset[]
+}
+
+export interface Preset {
+  readonly title: string
+  readonly state: Readonly<Record<string, string | number | boolean>>
+  readonly view?: { readonly center?: readonly [number, number]; readonly zoom?: number; readonly bearing?: number; readonly pitch?: number }
 }
 
 export const DEMO_DATASETS: readonly DemoDataset[] = [
@@ -45,6 +53,12 @@ export const DEMO_DATASETS: readonly DemoDataset[] = [
       { column: 'hour', label: 'Hour of day', time: true, window: 2, unit: 'h' },
       { column: 'fare', label: 'Fare', unit: '$' },
       { column: 'distance', label: 'Distance', unit: 'km' },
+    ],
+    presets: [
+      { title: 'Rush hour in 3D', state: { layer: 'hexbin', extrude: true, filter: 'hour', lo: 17, hi: 19 }, view: { center: [-73.97, 40.74], zoom: 11.4, pitch: 55, bearing: -20 } },
+      { title: 'Late-night glow', state: { layer: 'scatter', colorBy: 'fare', additive: true, filter: 'hour', lo: 22, hi: 24 }, view: { center: [-73.97, 40.72], zoom: 12 } },
+      { title: 'Airport trips', state: { layer: 'arcs', filter: 'distance', lo: 12, hi: 60 }, view: { center: [-73.88, 40.71], zoom: 10.3 } },
+      { title: 'Density', state: { layer: 'heatmap' }, view: { center: [-73.96, 40.74], zoom: 11 } },
     ],
     sizes: [10_000, 100_000, 1_000_000, 5_000_000, 10_000_000],
     start: 0,
@@ -71,6 +85,11 @@ export const DEMO_DATASETS: readonly DemoDataset[] = [
       { column: 'distance', label: 'Distance', unit: 'km' },
       { column: 'seats', label: 'Seats' },
     ],
+    presets: [
+      { title: 'Long haul', state: { layer: 'arcs', colorBy: 'distance', filter: 'distance', lo: 8000, hi: 20000 }, view: { center: [40, 20], zoom: 1.2 } },
+      { title: 'By airline', state: { layer: 'arcs', colorBy: 'airline', greatCircle: false } },
+      { title: 'Busiest destinations', state: { layer: 'heatmap' } },
+    ],
     sizes: [1_000, 10_000, 100_000, 500_000, 1_000_000],
     start: 0,
     view: { center: [20, 30], zoom: 1.3 },
@@ -91,6 +110,11 @@ export const DEMO_DATASETS: readonly DemoDataset[] = [
       { column: 'stops', ramp: 'ember' },
     ],
     filters: [],
+    presets: [
+      { title: 'Play the morning', state: { layer: 'trips', playing: true } },
+      { title: 'Every route', state: { layer: 'paths' } },
+      { title: 'Hotspots in 3D', state: { layer: 'hexbin', extrude: true }, view: { center: [-0.12, 51.5], zoom: 10.6, pitch: 50, bearing: 15 } },
+    ],
     sizes: [50, 500, 2_000, 10_000],
     start: 0,
     view: { center: [-0.12, 51.51], zoom: 10.6 },
@@ -115,6 +139,11 @@ export const DEMO_DATASETS: readonly DemoDataset[] = [
       { column: 'year', label: 'Year', time: true, window: 3 },
       { column: 'depth', label: 'Depth', unit: 'km' },
     ],
+    presets: [
+      { title: 'Magnitude 6+', state: { layer: 'scatter', colorBy: 'magnitude', filter: 'magnitude', lo: 6, hi: 10 } },
+      { title: 'Ring of Fire in 3D', state: { layer: 'hexbin', extrude: true }, view: { center: [165, 5], zoom: 1.8, pitch: 50, bearing: -15 } },
+      { title: 'Deep quakes', state: { layer: 'scatter', colorBy: 'depth', filter: 'depth', lo: 150, hi: 700 } },
+    ],
     sizes: [10_000, 100_000, 1_000_000, 3_000_000],
     start: 0,
     view: { center: [150, 15], zoom: 1.4 },
@@ -134,6 +163,10 @@ export const DEMO_DATASETS: readonly DemoDataset[] = [
       { column: 'speed', ramp: 'glow' },
     ],
     filters: [{ column: 'speed', label: 'Speed', unit: 'kn' }],
+    presets: [
+      { title: 'Slow near ports', state: { layer: 'scatter', colorBy: 'speed', filter: 'speed', lo: 0, hi: 6 }, view: { center: [104, 2], zoom: 5 } },
+      { title: 'Busiest waters', state: { layer: 'grid' } },
+    ],
     sizes: [10_000, 100_000, 1_000_000, 5_000_000],
     start: 0,
     view: { center: [60, 20], zoom: 1.5 },
@@ -157,6 +190,10 @@ export const DEMO_DATASETS: readonly DemoDataset[] = [
     filters: [
       { column: 'income', label: 'Median income', unit: '$' },
       { column: 'commute', label: 'Commute', unit: 'min' },
+    ],
+    presets: [
+      { title: 'Density in 3D', state: { colorBy: 'density', extrude: true }, view: { center: [-87.68, 41.86], zoom: 10.2, pitch: 50, bearing: 20 } },
+      { title: 'Long commutes', state: { colorBy: 'commute', filter: 'commute', lo: 40, hi: 120 } },
     ],
     sizes: [400, 2_500, 10_000, 40_000],
     start: 0,

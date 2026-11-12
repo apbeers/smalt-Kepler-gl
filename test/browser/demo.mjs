@@ -39,6 +39,30 @@ for (const id of ids) {
   }
 }
 
+// Every preset of every dataset, on the smallest data.
+for (const id of ['rides', 'flights', 'fleet', 'earthquakes', 'ships', 'districts']) {
+  await page.evaluate((d) => window.demo.select(d, 0), id);
+  await settle();
+  const n = await page.locator('[data-test="preset"]').count();
+  for (let i = 0; i < (quick ? Math.min(n, 2) : n); i++) {
+    const title = await page.locator('[data-test="preset"]').nth(i).textContent();
+    await page.locator('[data-test="preset"]').nth(i).click();
+    await settle();
+    await page.waitForTimeout(300);
+    const r = await info();
+    check(!r.error && r.objects > 0, `${id}: "${title}"${r.error ? ` — ${r.error}` : ''}`);
+  }
+  await state({ playing: false });
+}
+
+// The orbit turns the camera.
+const b0 = await page.evaluate(() => window.demo.map.getView().bearing);
+await page.locator('[data-test="orbit"]').click();
+await page.waitForTimeout(1500);
+await page.locator('[data-test="orbit"]').click();
+const b1 = await page.evaluate(() => window.demo.map.getView().bearing);
+check(Math.abs(b1 - b0) > 0.5, `the orbit turns the map (${b0.toFixed(1)}° → ${b1.toFixed(1)}°)`);
+
 // A GPU filter and playback on the rides.
 await page.evaluate(() => window.demo.select('rides', 0));
 await settle();

@@ -63,6 +63,7 @@ export default defineConfig({
     nav: [
       { text: 'Tech demo', link: '/demo' },
       { text: 'Guide', link: '/guide/getting-started' },
+      { text: 'Examples', link: '/examples/' },
       { text: 'Layers', link: '/guide/layers' },
       { text: 'API', link: '/reference/api' },
       {
@@ -88,6 +89,19 @@ export default defineConfig({
           { text: 'The basemap', link: '/guide/basemap' },
           { text: 'Performance', link: '/guide/performance' },
           { text: 'Tech demo', link: '/demo' },
+        ],
+      },
+      {
+        text: 'Examples',
+        items: [
+          { text: 'All examples', link: '/examples/' },
+          { text: 'Rides in New York', link: '/examples/rides' },
+          { text: 'Flights', link: '/examples/flights' },
+          { text: 'Delivery fleet', link: '/examples/fleet' },
+          { text: 'Earthquakes', link: '/examples/earthquakes' },
+          { text: 'Ships', link: '/examples/ships' },
+          { text: 'Districts in Chicago', link: '/examples/districts' },
+          { text: 'Supply chain', link: '/examples/supply-chain' },
         ],
       },
       {
