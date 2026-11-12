@@ -61,6 +61,27 @@ const playing = await page.evaluate(() => window.demo.map.getLayers()[0].animati
 await state({ playing: false });
 check(playing, 'trips play');
 
+// Your own file: a CSV through smaltdb, then GeoJSON polygons with a hole.
+await page.evaluate(() => window.demo.select('file', 0));
+await settle();
+const csv = ['name,longitude,latitude,value', ...Array.from({ length: 500 }, (_, i) => `p${i},${(-122.4 + (i % 25) * 0.004).toFixed(4)},${(37.75 + Math.floor(i / 25) * 0.003).toFixed(4)},${i}`)].join('\n');
+await page.locator('[data-test="file"]').setInputFiles({ name: 'points.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+await settle();
+let f = await info();
+check(!f.error && f.objects === 500, `CSV through smaltdb: ${f.objects} points${f.error ? ` — ${f.error}` : ''}`);
+const square = (x, y, s) => [[x, y], [x + s, y], [x + s, y + s], [x, y + s], [x, y]];
+const gj = {
+  type: 'FeatureCollection',
+  features: [
+    { type: 'Feature', properties: { zone: 'a', v: 1 }, geometry: { type: 'Polygon', coordinates: [square(-0.2, 51.4, 0.2), square(-0.15, 51.45, 0.05)] } },
+    { type: 'Feature', properties: { zone: 'b', v: 2 }, geometry: { type: 'Polygon', coordinates: [square(0.05, 51.4, 0.15)] } },
+  ],
+};
+await page.locator('[data-test="file"]').setInputFiles({ name: 'zones.geojson', mimeType: 'application/geo+json', buffer: Buffer.from(JSON.stringify(gj)) });
+await settle();
+f = await info();
+check(!f.error && f.objects === 2, `GeoJSON polygons: ${f.objects}${f.error ? ` — ${f.error}` : ''}`);
+
 // The benchmark.
 await page.locator('[data-test="bench"]').click();
 await page.waitForSelector('[data-test="bench-result"]', { timeout: 300000 });

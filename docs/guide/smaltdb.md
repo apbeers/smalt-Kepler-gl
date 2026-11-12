@@ -33,6 +33,13 @@ console.log(`${count} late-night rides in ${ms.toFixed(0)} ms`)
 Keep the work where it is fastest: let SQL choose the rows (joins, aggregates, anything with an index), and let the GPU
 do what changes every frame (filters on ranges, binning at the current cell size, colour).
 
+## Your own CSV
+
+`importCsv(db, table, file)` loads a CSV file (a `File`, a `Blob` or text) into a new table, with column types
+inferred by smaltdb, and reads it back as columns. It finds the longitude and latitude columns by their usual names
+(`lng`, `lon`, `longitude`, `x`; `lat`, `latitude`, `y`). In the [tech demo](../demo), choose **Your own file** and drop
+a CSV on the map, then query it with SQL.
+
 ## What smaltgl uses
 
 `querySmaltdb(db, sql, params?)` calls `db.query(sql, params, { rowMode: 'columnar' })` and nothing else;

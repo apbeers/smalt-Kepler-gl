@@ -51,3 +51,44 @@ describe('smaltdb', () => {
     expect(Number.isNaN(numeric(['1', null])[1])).toBe(true);
   });
 });
+
+import { readGeoJSON, findCoordinates } from '@smaltworks/smaltgl/data';
+
+describe('GeoJSON', () => {
+  const fc = {
+    type: 'FeatureCollection',
+    features: [
+      { type: 'Feature', properties: { name: 'a', pop: 10 }, geometry: { type: 'Point', coordinates: [1, 2] } },
+      { type: 'Feature', properties: { name: 'b', pop: null }, geometry: { type: 'MultiPoint', coordinates: [[3, 4], [5, 6]] } },
+      { type: 'Feature', properties: { road: 'A1' }, geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1], [2, 0]] } },
+      {
+        type: 'Feature',
+        properties: { zone: 'z', v: 3 },
+        geometry: { type: 'Polygon', coordinates: [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]], [[3, 3], [3, 7], [7, 7], [7, 3], [3, 3]]] },
+      },
+      { type: 'Feature', properties: { zone: 'y', v: 4 }, geometry: { type: 'MultiPolygon', coordinates: [[[[20, 0], [21, 0], [21, 1], [20, 0]]], [[[30, 0], [31, 0], [31, 1], [30, 0]]]] } },
+      { type: 'Feature', properties: {}, geometry: null },
+    ],
+  };
+  it('splits points, lines and polygons, one row per part', () => {
+    const g = readGeoJSON(JSON.stringify(fc));
+    expect(g.features).toBe(6);
+    expect(g.points.count).toBe(3);
+    expect(Array.from(g.points.feature)).toEqual([0, 1, 1]);
+    expect(Array.from(g.points.columns.pop as Float64Array)).toEqual([10, NaN, NaN]);
+    expect(g.points.categories.name.names).toEqual(['a', 'b']);
+    expect(Array.from(g.lines.starts)).toEqual([0, 3]);
+    expect(g.polygons.count).toBe(3);
+    // The first polygon has two rings: the outline and its hole.
+    expect(Array.from(g.polygons.rings)).toEqual([0, 5, 10, 14]);
+    expect(Array.from(g.polygons.starts)).toEqual([0, 10, 14, 18]);
+    expect(Array.from(g.polygons.columns.v as Float64Array)).toEqual([3, 4, 4]);
+  });
+  it('reads a bare geometry', () => {
+    expect(readGeoJSON({ type: 'Point', coordinates: [1, 2] }).points.count).toBe(1);
+  });
+  it('finds coordinate columns by name', () => {
+    expect(findCoordinates(['id', 'Longitude', 'LATITUDE'])).toEqual({ lng: 'Longitude', lat: 'LATITUDE' });
+    expect(findCoordinates(['a', 'b'])).toEqual({ lng: undefined, lat: undefined });
+  });
+});

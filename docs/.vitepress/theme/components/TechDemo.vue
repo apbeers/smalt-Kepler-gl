@@ -44,7 +44,14 @@ const s = reactive({
   cypher: CYPHER_PRESETS[0].cypher,
 })
 
-const ds = computed<DemoDataset>(() => DEMO_DATASETS.find((d) => d.id === s.dataset)!)
+/** For your own file: the layers, colours and filters its columns allow (found when it loads). */
+const fileMeta = shallowRef<Pick<DemoDataset, 'layers' | 'colorBy' | 'filters'> | null>(null)
+const fileName = ref('')
+const fileKind = ref<'' | 'csv' | 'geojson'>('')
+const ds = computed<DemoDataset>(() => {
+  const d = DEMO_DATASETS.find((x) => x.id === s.dataset)!
+  return d.source === 'file' && fileMeta.value ? { ...d, ...fileMeta.value } : d
+})
 const filterDef = computed(() => ds.value.filters.find((f) => f.column === s.filter))
 const fmtN = (n: number) => n.toLocaleString('en-US')
 const fmtMs = (n?: number) => (n === undefined ? '–' : n < 10 ? n.toFixed(1) : Math.round(n).toLocaleString('en-US'))
@@ -101,7 +108,14 @@ async function load(): Promise<void> {
   s.playing = false
   const d = ds.value
   try {
-    if (d.source === 'smaltdb') return await runSql()
+    if (d.source === 'smaltdb' || (d.source === 'file' && fileKind.value === 'csv')) return await runSql()
+    if (d.source === 'file') {
+      if (fileKind.value) return await build()
+      layers = []
+      map.setLayers([])
+      legend.value = null
+      return
+    }
     if (d.source === 'smaltcy') return await runCypher()
     busy.value = `Generating ${fmtN(s.size)} rows…`
     const { generate } = await import('@smaltworks/smaltgl/datasets')
@@ -210,9 +224,9 @@ async function build(): Promise<void> {
     }
   } else if (d.kind === 'paths') {
     const c = d.columns
-    const color = colorSpec(c[cb.column], !!cb.categorical, cb.ramp)
+    const color = colorSpec(c[cb.column], !!cb.categorical, cb.ramp) ?? '#E5622F'
     const pd = { starts: d.starts, lng: d.points.lng, lat: d.points.lat, times: d.points.times }
-    const props = { vehicle: Array.from(c.vehicle, (v) => ['Van', 'Cargo bike', 'Truck'][v]), stops: c.stops, km: Array.from(c.distance, (v) => Math.round(v * 10) / 10) }
+    const props = c.vehicle ? { vehicle: Array.from(c.vehicle, (v) => ['Van', 'Cargo bike', 'Truck'][v]), stops: c.stops, km: Array.from(c.distance, (v) => Math.round(v * 10) / 10) } : (d as { properties?: Record<string, ArrayLike<unknown>> }).properties ?? c
     if (s.layer === 'trips') {
       const t = gl.trips({ id, data: pd, color: color as never, width: s.width + 0.8, opacity: s.opacity, additive: s.additive, trail: 1800, time: 9 * 3600, properties: props })
       t.onTime = (time) => (clock.value = time)
@@ -224,7 +238,9 @@ async function build(): Promise<void> {
   } else if (d.kind === 'polygons') {
     const c = d.columns
     filterValues = s.filter ? c[s.filter] : undefined
-    out.push(gl.polygons({ id, data: { starts: d.starts, lng: d.points.lng, lat: d.points.lat }, color: colorSpec(c[cb.column], false, cb.ramp) as never, opacity: s.opacity, filters: gpuFilter(filterValues), properties: { population: c.population, density: Array.from(c.density, Math.round), income: c.income, commute: Array.from(c.commute, Math.round) } }))
+    const rings = (d as PolygonsDataset & { rings?: Uint32Array }).rings
+    const props = c.density ? { population: c.population, density: Array.from(c.density, Math.round), income: c.income, commute: Array.from(c.commute, Math.round) } : (d as { properties?: Record<string, ArrayLike<unknown>> }).properties ?? c
+    out.push(gl.polygons({ id, data: { starts: d.starts, lng: d.points.lng, lat: d.points.lat, rings }, color: (colorSpec(c[cb.column], !!cb.categorical, cb.ramp) ?? '#2F5BB7') as never, opacity: s.opacity, filters: gpuFilter(filterValues), properties: props }))
   }
   layers = out
   map.setLayers(out)
@@ -259,7 +275,7 @@ async function runSql(): Promise<void> {
       const smaltdb = await import('smaltdb')
       db = (await smaltdb.open('smaltgl-demo', { storage: 'memory' })) as never
     }
-    if (dbRows !== s.size) {
+    if (ds.value.source === 'smaltdb' && dbRows !== s.size) {
       busy.value = `Generating and loading ${fmtN(s.size)} rides into smaltdb…`
       const { generate } = await import('@smaltworks/smaltgl/datasets')
       const t0 = performance.now()
@@ -278,11 +294,25 @@ async function runSql(): Promise<void> {
       const k = Object.keys(res.columns).find((x) => x.toLowerCase() === name.toLowerCase())
       return k ? gl.numeric(res.columns[k]) : undefined
     }
-    const lng = col('lng'), lat = col('lat')
-    if (!lng || !lat) throw new Error('The query must return lng and lat columns.')
-    const fare = col('fare')
+    const coords = gl.findCoordinates(Object.keys(res.columns))
+    const lng = col(coords.lng ?? 'lng'), lat = col(coords.lat ?? 'lat')
+    if (!lng || !lat) throw new Error('The query must return longitude and latitude columns (named lng and lat, or longitude and latitude).')
     const columns: Record<string, Float64Array> = { lng, lat }
-    if (fare) columns.fare = fare
+    // Every other numeric column can colour and filter.
+    for (const k of Object.keys(res.columns)) {
+      if (k === coords.lng || k === coords.lat) continue
+      const v = res.columns[k]
+      if (v instanceof Float64Array || (v as unknown[]).every?.((x) => typeof x === 'number' || x === null)) columns[k] = gl.numeric(v)
+    }
+    if (ds.value.source === 'file') {
+      const numeric = Object.keys(columns).filter((k) => k !== 'lng' && k !== 'lat')
+      fileMeta.value = {
+        layers: ['scatter', 'heatmap', 'hexbin', 'grid'],
+        colorBy: numeric.length ? numeric.map((c) => ({ column: c, ramp: 'glow' })) : [{ column: '', ramp: 'glow' }],
+        filters: numeric.map((c) => ({ column: c, label: c })),
+      }
+      if (!numeric.includes(s.colorBy)) s.colorBy = numeric[0] ?? ''
+    }
     const dl = col('dropLng'), dt = col('dropLat')
     if (dl && dt) {
       columns.dropLng = dl
@@ -290,6 +320,7 @@ async function runSql(): Promise<void> {
     }
     data = { kind: 'points', count: res.count, columns } as PointsDataset
     projected = undefined
+    if (ds.value.source === 'file') map.fitBounds()
     if (s.layer === 'arcs' && !dl) throw new Error('Arcs need dropLng and dropLat columns: try "Long trips as arcs".')
     await build()
   } catch (e) {
@@ -497,7 +528,90 @@ const unitOf = computed(() => filterDef.value?.unit ?? '')
 const fmtV = (v: number) => (Math.abs(v) >= 1000 ? Math.round(v).toLocaleString('en-US') : Number.isInteger(v) ? String(v) : v.toFixed(1))
 const step = computed(() => (s.max - s.min > 100 ? 1 : (s.max - s.min) / 200))
 const rampCss = computed(() => (legend.value ? `linear-gradient(90deg, ${legend.value.stops.join(', ')})` : ''))
-const sqlMode = computed(() => ds.value.source === 'smaltdb')
+const sqlMode = computed(() => ds.value.source === 'smaltdb' || (ds.value.source === 'file' && fileKind.value === 'csv'))
+const fileMode = computed(() => ds.value.source === 'file')
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Your own file
+
+const dragging = ref(false)
+async function openFile(file: File | undefined): Promise<void> {
+  if (!file || !map) return
+  dragging.value = false
+  error.value = ''
+  if (s.dataset !== 'file') s.dataset = 'file'
+  fileName.value = file.name
+  try {
+    if (/\.(geo)?json$/i.test(file.name)) {
+      busy.value = `Reading ${file.name}…`
+      const t0 = performance.now()
+      const g = gl.readGeoJSON(await file.text())
+      stats.load = undefined
+      stats.query = undefined
+      fileKind.value = 'geojson'
+      // The geometry most of the file is.
+      const kind = g.polygons.count >= Math.max(g.lines.count, g.points.count) ? 'polygons' : g.lines.count >= g.points.count ? 'lines' : 'points'
+      const part = g[kind]
+      const columns: Record<string, Float32Array> = {}
+      const colorBy: DemoDataset['colorBy'][number][] = []
+      for (const [k, v] of Object.entries(part.columns))
+        if (v instanceof Float64Array) {
+          columns[k] = Float32Array.from(v)
+          colorBy.push({ column: k, ramp: 'glow' })
+        }
+      for (const [k, c] of Object.entries(part.categories))
+        if (c.names.length <= 64) {
+          columns[k] = c.codes
+          colorBy.push({ column: k, ramp: 'categorical', categorical: true })
+        }
+      const properties = part.columns
+      if (kind === 'polygons') {
+        const p = g.polygons
+        data = { kind: 'polygons', count: p.count, starts: p.starts, rings: p.rings, points: { lng: p.lng, lat: p.lat }, columns, properties } as never
+      } else if (kind === 'lines') {
+        const l = g.lines
+        data = { kind: 'paths', count: l.count, starts: l.starts, points: { lng: l.lng, lat: l.lat, times: new Float64Array(l.lng.length) }, columns, properties } as never
+      } else data = { kind: 'points', count: g.points.count, columns: { lng: g.points.lng, lat: g.points.lat, ...columns } } as never
+      fileMeta.value = {
+        layers: kind === 'polygons' ? ['polygons'] : kind === 'lines' ? ['paths'] : ['scatter', 'heatmap', 'hexbin', 'grid'],
+        colorBy: colorBy.length ? colorBy : [{ column: '', ramp: 'glow' }],
+        filters: colorBy.filter((c) => !c.categorical).map((c) => ({ column: c.column, label: c.column })),
+      }
+      s.layer = fileMeta.value.layers[0]
+      s.colorBy = colorBy[0]?.column ?? ''
+      s.filter = ''
+      projected = undefined
+      stats.generate = performance.now() - t0
+      stats.rows = part.count
+      await build()
+      map.fitBounds()
+    } else {
+      busy.value = `Loading ${file.name} into smaltdb…`
+      if (!db) {
+        const smaltdb = await import('smaltdb')
+        db = (await smaltdb.open('smaltgl-demo', { storage: 'memory' })) as never
+      }
+      const t0 = performance.now()
+      const r = await gl.importCsv(db as never, 'data', file)
+      stats.load = performance.now() - t0
+      stats.generate = undefined
+      if (!r.lng || !r.lat) throw new Error(`No longitude and latitude columns in ${file.name}: name them lng and lat (or longitude and latitude). Columns: ${r.names.join(', ')}`)
+      fileKind.value = 'csv'
+      s.sql = `SELECT * FROM data`
+      s.layer = 'scatter'
+      s.filter = ''
+      await runSql()
+    }
+  } catch (e) {
+    error.value = String((e as Error)?.message ?? e)
+  } finally {
+    busy.value = ''
+  }
+}
+const onDrop = (e: DragEvent) => {
+  e.preventDefault()
+  void openFile(e.dataTransfer?.files?.[0])
+}
 const cypherMode = computed(() => ds.value.source === 'smaltcy')
 const layerNames: Record<LayerKind, string> = { scatter: 'Points', heatmap: 'Heatmap', hexbin: 'Hexagons', grid: 'Grid', arcs: 'Arcs', trips: 'Trips (playback)', paths: 'Paths', polygons: 'Polygons' }
 </script>
@@ -520,9 +634,16 @@ const layerNames: Record<LayerKind, string> = { scatter: 'Points', heatmap: 'Hea
         </div>
       </div>
 
+      <div v-if="fileMode" class="field">
+        <span>File</span>
+        <label class="file">
+          <input type="file" accept=".csv,.tsv,.txt,.json,.geojson" data-test="file" @change="(e) => openFile((e.target as HTMLInputElement).files?.[0])" />
+          <span>{{ fileName || 'Choose a CSV or GeoJSON file…' }}</span>
+        </label>
+      </div>
       <div v-if="sqlMode" class="field">
-        <span>SQL <small>(table <code>rides</code>)</small></span>
-        <select class="presets" @change="(e) => { s.sql = SQL_PRESETS[Number((e.target as HTMLSelectElement).value)].sql; runSql() }">
+        <span>SQL <small>(table <code>{{ fileMode ? 'data' : 'rides' }}</code>)</small></span>
+        <select v-if="!fileMode" class="presets" @change="(e) => { s.sql = SQL_PRESETS[Number((e.target as HTMLSelectElement).value)].sql; runSql() }">
           <option v-for="(p, i) in SQL_PRESETS" :key="i" :value="i">{{ p.title }}</option>
         </select>
         <textarea v-model="s.sql" rows="5" spellcheck="false" aria-label="SQL" @keydown.ctrl.enter="runSql" @keydown.meta.enter="runSql" />
@@ -624,8 +745,10 @@ const layerNames: Record<LayerKind, string> = { scatter: 'Points', heatmap: 'Hea
       </div>
     </aside>
 
-    <div class="stage">
+    <div class="stage" @dragover.prevent="dragging = true" @dragleave="dragging = false" @drop="onDrop">
       <div ref="host" class="map" />
+      <div v-if="dragging" class="drop">Drop a CSV or GeoJSON file</div>
+      <div v-else-if="fileMode && !fileKind" class="drop hint">Drop a CSV or GeoJSON file here</div>
       <div class="stats" aria-live="off">
         <div><b>{{ fmtN(stats.rows) }}</b> {{ ds.id === 'fleet' ? 'GPS points' : 'rows' }}</div>
         <div v-if="stats.generate !== undefined">generated in <b>{{ fmtMs(stats.generate) }}</b> ms</div>
@@ -691,6 +814,11 @@ input[type='range'] { width: 100%; accent-color: var(--vp-c-brand-1); }
 .busy { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); z-index: 4; padding: 6px 12px; border-radius: 999px; background: var(--vp-c-brand-1); color: var(--vp-c-white); font-size: 13px; }
 .error { position: absolute; left: 10px; right: 10px; bottom: 80px; z-index: 4; padding: 8px 10px; border-radius: 8px; background: var(--vp-c-bg); border: 1px solid var(--vp-c-danger-1); color: var(--vp-c-danger-1); font-size: 13px; }
 .error::before { content: '✕ '; }
+.drop { position: absolute; inset: 12px; z-index: 5; display: grid; place-items: center; border: 2px dashed var(--vp-c-brand-1); border-radius: 10px; background: color-mix(in srgb, var(--vp-c-bg) 70%, transparent); font-weight: 500; color: var(--vp-c-text-1); }
+.drop.hint { pointer-events: none; background: transparent; border-color: var(--vp-c-divider); color: var(--vp-c-text-2); }
+.file { position: relative; display: block; padding: 6px 8px; border: 1px dashed var(--vp-c-divider); border-radius: 6px; cursor: pointer; color: var(--vp-c-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file:hover { border-color: var(--vp-c-brand-1); }
+.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .nogpu { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; background: var(--vp-c-bg-alt); }
 @media (max-width: 760px) {
   .demo { grid-template-columns: 1fr; grid-template-rows: auto 70vh; height: auto; }

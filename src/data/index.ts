@@ -9,6 +9,9 @@
  * Both take the database as a parameter and use only its public methods, so smaltgl itself depends on neither.
  */
 
+import { findCoordinates } from './geojson.js';
+export * from './geojson.js';
+
 /** Columns by name: numbers as typed arrays, anything else as plain arrays. */
 export type ColumnData = Record<string, Float64Array | Float32Array | Uint32Array | unknown[]>;
 
@@ -216,4 +219,23 @@ export function supplyChainJSON(g: {
     nodes: g.nodes.map((n) => ({ id: n.id, labels: [n.label], properties: { name: n.name, lng: n.lng, lat: n.lat, capacity: n.capacity } })),
     relationships: g.edges.map((e) => ({ start: e.from, end: e.to, type: e.type, properties: { volume: e.volume, days: e.days } })),
   };
+}
+
+
+
+/**
+ * Loads a CSV file (text, bytes or a File) into a new smaltdb table, with column types inferred by smaltdb, and reads
+ * it back as columns. The longitude and latitude columns are found by their usual names.
+ */
+export async function importCsv(
+  db: SmaltdbWritable & SmaltdbLike,
+  table: string,
+  source: string | Blob,
+): Promise<QueriedColumns & { readonly lng?: string; readonly lat?: string; readonly names: readonly string[] }> {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(table)) throw new Error(`Not a plain table name: ${table}`);
+  await db.exec(`DROP TABLE IF EXISTS ${table}`);
+  await db.importCSV(table, source, { create: true, header: true });
+  const r = await querySmaltdb(db, `SELECT * FROM ${table}`);
+  const names = Object.keys(r.columns);
+  return { ...r, ...findCoordinates(names), names };
 }

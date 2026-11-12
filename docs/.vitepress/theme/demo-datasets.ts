@@ -7,7 +7,7 @@ export type LayerKind = 'scatter' | 'heatmap' | 'hexbin' | 'grid' | 'arcs' | 'tr
 export interface DemoDataset {
   readonly id: string
   /** The generator, or a database-backed source. */
-  readonly source: GeneratorName | 'smaltdb' | 'smaltcy'
+  readonly source: GeneratorName | 'smaltdb' | 'smaltcy' | 'file'
   readonly title: string
   /** The use case, in a sentence. */
   readonly about: string
@@ -193,6 +193,22 @@ export const DEMO_DATASETS: readonly DemoDataset[] = [
     view: { center: [20, 30], zoom: 1.3 },
     theme: 'dark',
     radius: 3,
+  },
+  {
+    id: 'file',
+    source: 'file',
+    title: 'Your own file (CSV or GeoJSON)',
+    about:
+      'Drop a CSV or GeoJSON file on the map, or pick one. A CSV goes into a smaltdb table named data (columns named lng and lat, or longitude and latitude, place the points), and you can query it with SQL. GeoJSON points, lines and polygons (holes included) draw as they are. Nothing leaves your browser.',
+    layers: ['scatter', 'heatmap', 'hexbin', 'grid'],
+    colorBy: [{ column: '', ramp: 'glow' }],
+    filters: [],
+    sizes: [0],
+    start: 0,
+    view: { center: [0, 20], zoom: 1.5 },
+    theme: 'light',
+    radius: 3,
+    cellSize: 1000,
   },
 ]
 

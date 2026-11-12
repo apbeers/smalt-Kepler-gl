@@ -14,6 +14,11 @@ export interface PolygonData {
   readonly starts: ArrayLike<number>;
   readonly lng: ArrayLike<number>;
   readonly lat: ArrayLike<number>;
+  /**
+   * Where every ring starts in the point columns (outer rings and holes), when polygons have holes. A polygon's outer
+   * ring starts at `starts[k]`; any other ring starting before `starts[k + 1]` is a hole in it.
+   */
+  readonly rings?: ArrayLike<number>;
 }
 
 export interface PolygonOptions {
@@ -127,15 +132,26 @@ export class PolygonLayer implements Layer {
     const idx: number[] = [];
     const segs: number[] = [];
     const segPoly: number[] = [];
+    // Ring boundaries: every polygon start, plus the hole starts when given.
+    const bounds = Array.from(new Set([...Array.from(d.starts), ...(d.rings ? Array.from(d.rings) : [])])).sort((a, b) => a - b);
+    let r = 0;
     for (let k = 0; k < n; k++) {
       const s = d.starts[k], e = d.starts[k + 1];
       for (let i = s; i < e; i++) this.vertPoly[i] = k;
-      for (const t of triangulate(p.positions, s, e - s)) idx.push(s + t);
-      for (let i = s; i < e; i++) {
-        const j = i + 1 < e ? i + 1 : s;
-        segs.push(p.positions[2 * i], p.positions[2 * i + 1], p.positions[2 * j], p.positions[2 * j + 1]);
-        segPoly.push(k);
-      }
+      // The rings of this polygon: [start, end) pairs.
+      const rings: [number, number][] = [];
+      while (r < bounds.length && bounds[r] < s) r++;
+      for (let q = r; q < bounds.length && bounds[q] < e; q++) rings.push([bounds[q], Math.min(e, bounds[q + 1] ?? e)]);
+      if (!rings.length) continue;
+      const [o0, o1] = rings[0];
+      const holes = rings.slice(1).map(([a, b]) => [a, b - a] as const);
+      for (const t of triangulate(p.positions, o0, o1 - o0, holes)) idx.push(t);
+      for (const [a, b] of rings)
+        for (let i = a; i < b; i++) {
+          const j = i + 1 < b ? i + 1 : a;
+          segs.push(p.positions[2 * i], p.positions[2 * i + 1], p.positions[2 * j], p.positions[2 * j + 1]);
+          segPoly.push(k);
+        }
     }
     this.index = Uint32Array.from(idx);
     this.segs = Float32Array.from(segs);

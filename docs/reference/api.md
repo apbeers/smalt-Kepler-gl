@@ -8,7 +8,7 @@ Everything is exported from `@smaltworks/smaltgl`; the pieces are also entry poi
 | `/core` | Projection (`projectColumns`, `toWorld`, …), `Camera`, colours and ramps, WebGPU setup |
 | `/layers` | `scatter`, `heatmap`, `hexbin`, `grid`, `arcs`, `paths`, `trips`, `polygons` |
 | `/basemap` | `basemap`, themes, the vector tile decoder |
-| `/data` | `querySmaltdb`, `loadSmaltdb`, `graphLayers`, `supplyChainJSON`, `numeric` |
+| `/data` | `querySmaltdb`, `loadSmaltdb`, `importCsv`, `readGeoJSON`, `findCoordinates`, `graphLayers`, `supplyChainJSON`, `numeric` |
 | `/datasets` | `generate` and the generators |
 
 ## The map
@@ -53,7 +53,7 @@ on hover). Points are `{ lng, lat }` columns, or the result of `projectColumns`.
 | `hexbin`, `grid` | `cellSize` (metres), `weight`, `measure: 'count' \| 'sum' \| 'mean'`, `ramp`, `scale`, `coverage` |
 | `arcs` | `data: { sourceLng, sourceLat, targetLng, targetLat }`, `targetColor`, `width`, `height`, `greatCircle`, `animate`, `additive` |
 | `paths`, `trips` | `data: { starts, lng, lat, times? }`, `width`, `time`, `trail`, `additive` |
-| `polygons` | `data: { starts, lng, lat }`, `stroke: { color, width }` |
+| `polygons` | `data: { starts, lng, lat, rings? }` (`rings`: every ring start, holes included), `stroke: { color, width }` |
 
 Layer methods: `update(changes)` for looks (no upload), `setFilter(index, [min, max])`, and for paths `setTime(t)`,
 `play(speed)`, `pause()`, `onTime`.

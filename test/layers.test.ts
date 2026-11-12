@@ -36,3 +36,28 @@ describe('triangulate', () => {
     });
   }
 });
+
+describe('triangulate with holes', () => {
+  // A 10 × 10 square with a 4 × 4 hole, and with two holes.
+  const outer = [0, 0, 10, 0, 10, 10, 0, 10];
+  const hole1 = [3, 3, 3, 7, 7, 7, 7, 3];
+  const hole2 = [1, 1, 1, 2, 2, 2, 2, 1];
+  it('covers the square minus one hole', () => {
+    const xy = [...outer, ...hole1];
+    const t = triangulate(xy, 0, 4, [[4, 4]]);
+    expect(area(xy, t)).toBeCloseTo(100 - 16, 9);
+  });
+  it('covers the square minus two holes, whatever their winding', () => {
+    const xy = [...outer, ...hole1, ...[...hole2].reverse()];
+    const t = triangulate(xy, 0, 4, [[4, 4], [8, 4]]);
+    expect(area(xy, t)).toBeCloseTo(100 - 16 - 1, 9);
+  });
+  it('handles a concave outer ring with a hole', () => {
+    // A U shape with a hole in its base.
+    const u = [0, 0, 9, 0, 9, 9, 6, 9, 6, 3, 3, 3, 3, 9, 0, 9];
+    const h = [4, 1, 5, 1, 5, 2, 4, 2];
+    const xy = [...u, ...h];
+    const t = triangulate(xy, 0, 8, [[8, 4]]);
+    expect(area(xy, t)).toBeCloseTo(ringArea(u) - 1, 9);
+  });
+});
