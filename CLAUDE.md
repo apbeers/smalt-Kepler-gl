@@ -12,6 +12,14 @@ Before changing the site, the README or how the product is described, read smalt
 badges unchanged from the family. smaltgl has no mark or product colour yet (ADR 0001, "Open"): don't invent one. No
 unsourced performance claims: a number appears only with its benchmark and method.
 
+## Workflow
+
+Early development (owner, 2026-11-12): no pull requests. When work is done and `npm run check` passes, commit and push
+it straight to `main`. This replaces the family rule of one PR per task until the owner says otherwise.
+
+TypeScript is 7.1 (the owner asked for the newest with full WebGPU types): its DOM library declares WebGPU, including
+`GPUBufferUsage` and the other flag constants, so there is no WebGPU shim. Don't add one back.
+
 ## Commands
 
 | Command | What it does |
