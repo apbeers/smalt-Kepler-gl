@@ -22,6 +22,7 @@ const map = await createMap(container, options)
 | `center` | `[0, 20]` | `[longitude, latitude]` |
 | `zoom` | `1.5` | 0 is the whole world in 512 pixels; each step doubles |
 | `bearing` | `0` | Degrees clockwise |
+| `pitch` | `0` | Degrees of tilt, 0 (straight down) to 60 |
 | `basemap` | none | `basemap({ theme, tiles })`, or `null` |
 | `layers` | `[]` | |
 | `pixelRatio` | the screen's, at most 2 | |
@@ -31,7 +32,7 @@ const map = await createMap(container, options)
 | Method | |
 | --- | --- |
 | `addLayer(layer)`, `removeLayer(layerOrId)`, `setLayers(layers)`, `getLayers()` | Layers draw in order |
-| `setView({ center, zoom, bearing })`, `getView()`, `flyTo(view, ms)`, `fitBounds(bounds?)` | |
+| `setView({ center, zoom, bearing, pitch })`, `getView()`, `flyTo(view, ms)`, `fitBounds(bounds?)` | |
 | `setBasemap(basemap \| null)`, `getBasemap()` | Passing the current basemap again picks up a theme change |
 | `on('move' \| 'hover' \| 'click' \| 'frame', fn)` | Returns a function that removes the listener |
 | `redraw()` | Asks for a frame |
@@ -50,10 +51,10 @@ on hover). Points are `{ lng, lat }` columns, or the result of `projectColumns`.
 | --- | --- |
 | `scatter` | `radius`, `radiusMax`, `size: { values, domain }`, `units: 'pixels' \| 'meters'`, `stroke: { color, width }`, `additive` |
 | `heatmap` | `weight`, `radius`, `intensity`, `ramp`, `scale: 'log' \| 'linear'` |
-| `hexbin`, `grid` | `cellSize` (metres), `weight`, `measure: 'count' \| 'sum' \| 'mean'`, `ramp`, `scale`, `coverage` |
+| `hexbin`, `grid` | `cellSize` (metres), `weight`, `measure: 'count' \| 'sum' \| 'mean'`, `ramp`, `scale`, `coverage`, `extrude` (metres at the top value) |
 | `arcs` | `data: { sourceLng, sourceLat, targetLng, targetLat }`, `targetColor`, `width`, `height`, `greatCircle`, `animate`, `additive` |
 | `paths`, `trips` | `data: { starts, lng, lat, times? }`, `width`, `time`, `trail`, `additive` |
-| `polygons` | `data: { starts, lng, lat, rings? }` (`rings`: every ring start, holes included), `stroke: { color, width }` |
+| `polygons` | `data: { starts, lng, lat, rings? }` (`rings`: every ring start, holes included), `stroke: { color, width }`, `extrude: { values, scale } \| metres` |
 
 Layer methods: `update(changes)` for looks (no upload), `setFilter(index, [min, max])`, and for paths `setTime(t)`,
 `play(speed)`, `pause()`, `onTime`.

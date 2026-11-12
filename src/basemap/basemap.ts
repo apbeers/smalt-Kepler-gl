@@ -227,6 +227,8 @@ export class Basemap implements MapBasemap {
       primitive: { topology: 'triangle-list' },
       depthStencil: {
         format: STENCIL_FORMAT,
+        depthCompare: 'always',
+        depthWriteEnabled: false,
         // Nonzero winding: rings wound one way count up, the other way down. Overlapping polygons of a group then
         // fill as their union, and holes (wound against their outer ring) cancel.
         stencilFront: { compare: 'always', passOp: 'increment-wrap', failOp: 'keep' },
@@ -244,6 +246,8 @@ export class Basemap implements MapBasemap {
       primitive: { topology: 'triangle-list' },
       depthStencil: {
         format: STENCIL_FORMAT,
+        depthCompare: 'always',
+        depthWriteEnabled: false,
         stencilFront: { compare: 'not-equal', passOp: 'zero', failOp: 'keep' },
         stencilBack: { compare: 'not-equal', passOp: 'zero', failOp: 'keep' },
         stencilReadMask: 0xff,

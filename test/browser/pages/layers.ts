@@ -69,6 +69,23 @@ const make: Record<string, () => Layer> = {
     const d = (window as any).pathData;
     return trips({ id: 'l', data: d, time: 20, trail: 10, width: 3, color: '#E5622F' });
   },
+  hexbin3d: () => {
+    const c = cloud(50000);
+    return hexbin({ id: 'l', data: c, cellSize: 150000, extrude: 2_000_000, coverage: 0.85 });
+  },
+  polygons3d: () => {
+    const lng: number[] = [], lat: number[] = [], starts: number[] = [], v: number[] = [];
+    for (let i = 0; i < 5; i++)
+      for (let j = 0; j < 5; j++) {
+        starts.push(lng.length);
+        const x = -12 + i * 5, y = -12 + j * 5;
+        lng.push(x, x + 4, x + 4, x);
+        lat.push(y, y, y + 4, y + 4);
+        v.push(1 + i + j);
+      }
+    starts.push(lng.length);
+    return polygons({ id: 'l', data: { starts, lng, lat }, color: { values: v, ramp: 'ember' }, extrude: { values: v, scale: 120_000 }, properties: { value: v } });
+  },
   polygons: () => {
     // A 6 x 6 grid of squares, and one concave L.
     const lng: number[] = [], lat: number[] = [], starts: number[] = [], v: number[] = [];
@@ -91,7 +108,7 @@ const make: Record<string, () => Layer> = {
 
 (window as any).show = async (kind: string) => {
   map.setLayers([make[kind]()]);
-  map.setView({ center: [0, 0], zoom: kind === 'greatCircle' ? 1 : 3 });
+  map.setView({ center: [0, 0], zoom: kind === 'greatCircle' ? 1 : 3, pitch: kind.endsWith('3d') ? 50 : 0, bearing: kind.endsWith('3d') ? 20 : 0 });
   await map.renderNow();
   await map.renderNow();
   return { ...map.stats };

@@ -2,7 +2,7 @@
  * Polygons coloured by value (choropleths): districts, zones, catchments. Rings are triangulated once on the CPU
  * (triangulate.ts), then each frame is one indexed draw for the fills and one instanced draw for the outlines.
  */
-import { BLEND_OVER, bufferFrom, NO_STENCIL, VIEW_WGSL } from '../core/gpu.js';
+import { BLEND_OVER, bufferFrom, DEPTH_TESTED, NO_STENCIL, VIEW_WGSL } from '../core/gpu.js';
 import { parseColor } from '../core/color.js';
 import { projectColumns, type Bounds } from '../core/mercator.js';
 import { describeRow, emptyStorage, makeRamp, PICK_TARGET, premul, resolveColor, storageEntry, storageOf, type Ramp, type ResolvedColor } from './common.js';
@@ -29,6 +29,8 @@ export interface PolygonOptions {
   readonly opacity?: number;
   /** Outline colour and width in pixels (default: thin, in the map's halo colour). Width 0 for none. */
   readonly stroke?: { readonly color?: string; readonly width?: number };
+  /** Raise polygons into blocks: a height in metres per polygon (`values` times `scale`), or one height for all. */
+  readonly extrude?: { readonly values?: ArrayLike<number>; readonly scale?: number } | number;
   /** A filter with a value per polygon. */
   readonly filters?: readonly GpuFilter[];
   readonly properties?: Readonly<Record<string, ArrayLike<unknown>>>;
@@ -42,12 +44,25 @@ struct U {
   color: vec4f,
   stroke: vec4f,
   hasColor: f32, slot: f32, highlight: f32, hasFilter: f32,
-  range: vec2f, pad: vec2f,
+  range: vec2f, extrude: f32, heightScale: f32,
 };
 @group(1) @binding(0) var<uniform> u: U;
 ${RAMP_WGSL}
 @group(1) @binding(3) var<storage, read> colorT: array<f32>;
 @group(1) @binding(4) var<storage, read> filterA: array<f32>;
+@group(1) @binding(5) var<storage, read> heights: array<f32>;
+// Height in pixels: a value per polygon times the scale, or the scale alone.
+fn heightOf(poly: u32) -> f32 {
+  if (u.extrude < 0.5) { return 0.0; }
+  if (u.extrude > 1.5) { return metresToPixels(max(0.0, heights[poly]) * u.heightScale); }
+  return metresToPixels(u.heightScale);
+}
+fn colorOf(poly: u32) -> vec4f {
+  var c = u.color;
+  if (u.hasColor > 0.5) { c = ramp(colorT[poly]); }
+  if (f32(poly) == u.highlight) { c = vec4f(mix(c.rgb, vec3f(1.0), 0.3), c.a); }
+  return c;
+}
 fn hidden(poly: u32) -> bool {
   if (u.hasFilter > 0.5) { let v = filterA[poly]; return !(v >= u.range.x && v <= u.range.y); }
   return false;
@@ -56,11 +71,10 @@ struct F { @builtin(position) p: vec4f, @location(0) @interpolate(flat) color: v
 @vertex fn vsFill(@location(0) p: vec2f, @location(1) poly: u32) -> F {
   var o: F;
   if (hidden(poly)) { o.p = vec4f(2.0, 2.0, 2.0, 1.0); return o; }
-  o.p = pixelsToClip(toPixels(p + u.offset));
-  var c = u.color;
-  if (u.hasColor > 0.5) { c = ramp(colorT[poly]); }
-  if (f32(poly) == u.highlight) { c = vec4f(mix(c.rgb, vec3f(1.0), 0.3), c.a); }
-  o.color = vec4f(c.rgb * c.a, c.a) * u.opacity;
+  o.p = project(toPixels(p + u.offset), heightOf(poly));
+  let c = colorOf(poly);
+  let a = select(u.opacity, 1.0, u.extrude > 0.5);
+  o.color = vec4f(c.rgb * c.a, c.a) * a;
   o.id = poly;
   return o;
 }
@@ -81,10 +95,29 @@ const C = array<vec2f, 6>(vec2f(0, -1), vec2f(1, -1), vec2f(0, 1), vec2f(0, 1), 
   let n = vec2f(-dir.y, dir.x);
   let hw = u.strokeWidth * 0.5 + 1.0;
   let c = C[vi];
-  o.p = pixelsToClip(mix(a - dir * hw * 0.5, b + dir * hw * 0.5, c.x) + n * c.y * hw);
+  o.p = project(mix(a - dir * hw * 0.5, b + dir * hw * 0.5, c.x) + n * c.y * hw, heightOf(poly));
   o.side = c.y * hw;
   return o;
 }
+// Walls: a quad per outline segment, from the ground to the polygon's height, shaded by which way it faces.
+struct W { @builtin(position) p: vec4f, @location(0) @interpolate(flat) color: vec4f };
+@vertex fn vsWall(@builtin(vertex_index) vi: u32, @location(0) seg: vec4f, @location(1) poly: u32) -> W {
+  var o: W;
+  let h = heightOf(poly);
+  if (hidden(poly) || h <= 0.0) { o.p = vec4f(2.0, 2.0, 2.0, 1.0); return o; }
+  let ends = array<f32, 6>(0.0, 1.0, 0.0, 0.0, 1.0, 1.0);
+  let ups = array<f32, 6>(0.0, 0.0, 1.0, 1.0, 0.0, 1.0);
+  let p = mix(seg.xy, seg.zw, ends[vi]);
+  o.p = project(toPixels(p + u.offset), h * ups[vi]);
+  let d = seg.zw - seg.xy;
+  let n = normalize(vec2f(d.y, -d.x) + vec2f(1e-9));
+  let shade = 0.6 + 0.3 * abs(dot(n, normalize(vec2f(-1.0, -1.0))));
+  let c = colorOf(poly);
+  o.color = vec4f(c.rgb * shade, 1.0);
+  return o;
+}
+@fragment fn fsWall(v: W) -> @location(0) vec4f { return v.color; }
+
 @fragment fn fsLine(v: L) -> @location(0) vec4f {
   let a = clamp(max(u.strokeWidth, 1.0) * 0.5 - abs(v.side) + 0.5, 0.0, 1.0) * min(u.strokeWidth, 1.0);
   return u.stroke * a;
@@ -109,6 +142,7 @@ export class PolygonLayer implements Layer {
   private fillPipe?: GPURenderPipeline;
   private linePipe?: GPURenderPipeline;
   private pickPipe?: GPURenderPipeline;
+  private wallPipe?: GPURenderPipeline;
   private layout?: GPUBindGroupLayout;
   private group?: GPUBindGroup;
   private groupVersion = -1;
@@ -164,7 +198,9 @@ export class PolygonLayer implements Layer {
     return this.col;
   }
 
-  update(changes: Partial<Pick<PolygonOptions, 'opacity' | 'stroke'>>): void {
+  update(changes: Partial<Pick<PolygonOptions, 'opacity' | 'stroke'>> & { extrude?: { scale?: number } | number }): void {
+    // A height scale changes without re-uploading; switching extrusion on or off needs a new layer.
+    if (changes.extrude !== undefined && typeof this.opts.extrude === 'object' && typeof changes.extrude === 'object') changes = { ...changes, extrude: { ...this.opts.extrude, ...changes.extrude } };
     this.opts = { ...this.opts, ...changes };
     this.redraw();
   }
@@ -187,6 +223,7 @@ export class PolygonLayer implements Layer {
         { binding: 2, visibility: V | F, sampler: { type: 'filtering' } },
         storageEntry(3, V),
         storageEntry(4, V),
+        storageEntry(5, V),
       ],
     });
     const module = device.createShaderModule({ label: 'polygons', code: WGSL });
@@ -195,12 +232,28 @@ export class PolygonLayer implements Layer {
       { arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] },
       { arrayStride: 4, attributes: [{ shaderLocation: 1, offset: 0, format: 'uint32' }] },
     ];
+    const extruded = !!this.opts.extrude;
     this.fillPipe = device.createRenderPipeline({
       label: 'polygon fill',
       layout: pl,
       vertex: { module, entryPoint: 'vsFill', buffers: fillBuffers },
       fragment: { module, entryPoint: 'fsFill', targets: [{ format: gpu.format, blend: BLEND_OVER }] },
-      depthStencil: NO_STENCIL,
+      depthStencil: extruded ? DEPTH_TESTED : NO_STENCIL,
+      multisample: { count: gpu.samples },
+    });
+    this.wallPipe = device.createRenderPipeline({
+      label: 'polygon walls',
+      layout: pl,
+      vertex: {
+        module,
+        entryPoint: 'vsWall',
+        buffers: [
+          { arrayStride: 16, stepMode: 'instance', attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x4' }] },
+          { arrayStride: 4, stepMode: 'instance', attributes: [{ shaderLocation: 1, offset: 0, format: 'uint32' }] },
+        ],
+      },
+      fragment: { module, entryPoint: 'fsWall', targets: [{ format: gpu.format, blend: BLEND_OVER }] },
+      depthStencil: DEPTH_TESTED,
       multisample: { count: gpu.samples },
     });
     this.pickPipe = device.createRenderPipeline({
@@ -221,7 +274,7 @@ export class PolygonLayer implements Layer {
         ],
       },
       fragment: { module, entryPoint: 'fsLine', targets: [{ format: gpu.format, blend: BLEND_OVER }] },
-      depthStencil: NO_STENCIL,
+      depthStencil: extruded ? { ...DEPTH_TESTED, depthWriteEnabled: false, depthCompare: 'less-equal' } : NO_STENCIL,
       multisample: { count: gpu.samples },
     });
     const empty = emptyStorage(device);
@@ -234,9 +287,15 @@ export class PolygonLayer implements Layer {
       bufferFrom(device, this.segPoly, VB, 'polygon outline ids'),
       storageOf(device, this.col.t, empty, 'polygon colour'),
       storageOf(device, this.filters[0]?.values, empty, 'polygon filter'),
+      storageOf(device, this.heightValues(), empty, 'polygon heights'),
       empty,
     ];
     this.ramp = makeRamp(device, this.col.table);
+  }
+
+  private heightValues(): Float32Array | undefined {
+    const e = this.opts.extrude;
+    return e && typeof e === 'object' && e.values ? Float32Array.from(e.values) : undefined;
   }
 
   private bind(): GPUBindGroup {
@@ -250,6 +309,7 @@ export class PolygonLayer implements Layer {
           { binding: 2, resource: this.ramp!.sampler },
           { binding: 3, resource: { buffer: this.gpuBuffers[5] } },
           { binding: 4, resource: { buffer: this.gpuBuffers[6] } },
+          { binding: 5, resource: { buffer: this.gpuBuffers[7] } },
         ],
       });
       this.groupVersion = gpu.arena.version;
@@ -262,12 +322,15 @@ export class PolygonLayer implements Layer {
     const [ox, oy] = originOffset(this.origin, frame.camera);
     const stroke = parseColor(o.stroke?.color ?? (frame.dark ? '#14171F' : '#FFFFFF'));
     const f = this.filters[0];
+    const e = o.extrude;
+    const mode = !e ? 0 : typeof e === 'number' ? 1 : e.values ? 2 : 1;
+    const scale = typeof e === 'number' ? e : (e?.scale ?? 1);
     return [
       ox, oy, o.opacity ?? 0.75, o.stroke?.width ?? 0.8,
       ...premul(this.col.color),
       ...premul(stroke),
       this.col.mode, slot, this.highlighted, f ? 1 : 0,
-      f?.range[0] ?? 0, f?.range[1] ?? 0, 0, 0,
+      f?.range[0] ?? 0, f?.range[1] ?? 0, mode, scale,
     ];
   }
 
@@ -280,6 +343,12 @@ export class PolygonLayer implements Layer {
     pass.setVertexBuffer(1, this.gpuBuffers[1]);
     pass.setIndexBuffer(this.gpuBuffers[2], 'uint32');
     pass.drawIndexed(this.index.length);
+    if (pipe === this.fillPipe && this.opts.extrude && this.segPoly.length) {
+      pass.setPipeline(this.wallPipe!);
+      pass.setVertexBuffer(0, this.gpuBuffers[3]);
+      pass.setVertexBuffer(1, this.gpuBuffers[4]);
+      pass.draw(6, this.segPoly.length);
+    }
     if (pipe === this.fillPipe && this.segPoly.length) {
       pass.setPipeline(this.linePipe!);
       pass.setVertexBuffer(0, this.gpuBuffers[3]);

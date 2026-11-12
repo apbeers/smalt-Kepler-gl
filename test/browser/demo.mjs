@@ -51,6 +51,13 @@ await page.waitForTimeout(1500);
 const lo = await page.evaluate(() => window.demo.state.lo);
 await state({ playing: false });
 check(lo !== 7, `playback moves the hour filter (now ${lo.toFixed(2)})`);
+await state({ extrude: true });
+await settle();
+const tilt = await page.evaluate(() => window.demo.map.getView().pitch);
+const r3 = await info();
+check(!r3.error && tilt >= 20 && r3.objects > 0, `3D columns, tilted ${tilt}°`);
+await state({ extrude: false, pitch: 0 });
+await settle();
 
 // Trips playback.
 await page.evaluate(() => window.demo.select('fleet', 0));

@@ -29,7 +29,8 @@ map.addLayer(scatter({ data: { lng, lat }, color: '#2F5BB7', radius: 2 }));
 ```
 
 The container needs a size; the map fills it and follows it when it resizes. Drag to pan, scroll or pinch to zoom,
-right-drag (or Ctrl-drag) to rotate, double-click to zoom in. Arrow keys and `+` and `−` work when the map has focus.
+right-drag (or Ctrl-drag) sideways to rotate and up or down to tilt, double-click to zoom in. Arrow keys and `+` and
+`−` work when the map has focus; Shift with the up and down arrows tilts.
 
 ## Try it
 

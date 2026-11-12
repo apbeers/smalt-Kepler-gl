@@ -11,7 +11,7 @@ const { browser, page, errors } = await open(s.url);
 await page.waitForFunction(() => window.ready === true, null, { timeout: 30000 }).catch((e) => { console.log(errors.join('\n')); throw e; });
 
 const coloured = ([r, g, b]) => !(r > 245 && g > 245 && b > 245);
-const expect = { scatter: 2000, heatmap: 2000, hexbin: 2000, grid: 2000, arcs: 1000, greatCircle: 300, paths: 1000, trips: 300, polygons: 5000 };
+const expect = { scatter: 2000, heatmap: 2000, hexbin: 2000, grid: 2000, arcs: 1000, greatCircle: 300, paths: 1000, trips: 300, polygons: 5000, hexbin3d: 2000, polygons3d: 5000 };
 for (const kind of Object.keys(expect)) {
   console.log(kind);
   await page.evaluate((k) => window.show(k), kind);

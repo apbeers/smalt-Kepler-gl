@@ -101,6 +101,33 @@ map.setLayers([
 map.setView({ center: [-87.7, 41.84], zoom: 9.6 })
 ```
 
+## 3D: columns and blocks
+
+Tilt the map (`pitch`, up to 60°; right-drag up and down, or Shift with the arrow keys) and raise hexagons, grid
+cells and polygons. `extrude` on `hexbin` and `grid` is the height in metres of the largest cell; on `polygons` it is a
+height per polygon (`{ values, scale }`, in metres per unit) or one height for all. Columns are lit from the
+north-west and hide what is behind them.
+
+```js run dark height=460
+const { dataset } = await generate('rides', 500_000)
+map.setLayers([hexbin({ data: dataset.columns, cellSize: 220, extrude: 2500, ramp: 'ember', scale: 'log' })])
+map.setView({ center: [-73.975, 40.74], zoom: 11.6, pitch: 55, bearing: -25 })
+```
+
+```js run height=460
+const { dataset } = await generate('districts', 2_500)
+const c = dataset.columns
+map.setLayers([
+  polygons({
+    data: { starts: dataset.starts, ...dataset.points },
+    color: { values: c.density, ramp: 'ember' },
+    extrude: { values: c.density, scale: 0.4 },
+    properties: { density: c.density, population: c.population },
+  }),
+])
+map.setView({ center: [-87.68, 41.86], zoom: 10.2, pitch: 50, bearing: 20 })
+```
+
 ## Many layers
 
 Layers draw in order, over the basemap and under its labels. Each picks for itself: hovering shows the top object's

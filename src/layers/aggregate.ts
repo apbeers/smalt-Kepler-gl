@@ -4,7 +4,7 @@
  * and finds the largest; the map's pass draws one instanced cell per bin, coloured by its value over that maximum.
  * Moving a filter re-runs the binning on the GPU, with nothing read back to draw.
  */
-import { BLEND_OVER, NO_STENCIL, VIEW_WGSL } from '../core/gpu.js';
+import { BLEND_OVER, DEPTH_TESTED, NO_STENCIL, VIEW_WGSL } from '../core/gpu.js';
 import { bakeRamp, RAMPS, type RampName } from '../core/color.js';
 import { metersToWorld, yToLat, type Projected } from '../core/mercator.js';
 import { emptyStorage, FILTER_WGSL, filterUniforms, makeRamp, PICK_TARGET, storageOf, toProjected, type PointInput, type Ramp } from './common.js';
@@ -24,6 +24,8 @@ export interface AggregateOptions {
   readonly ramp?: RampName | readonly string[];
   /** 'linear' (default) or 'log' colour scale. */
   readonly scale?: 'linear' | 'log';
+  /** Raise cells into columns: the height in metres of the largest value (0, the default, keeps them flat). */
+  readonly extrude?: number;
   /** Fraction of the cell drawn (default 0.92): gaps show the map between cells. */
   readonly coverage?: number;
   readonly opacity?: number;
@@ -112,7 +114,7 @@ ${FILTER_WGSL}
 
 const DRAW_WGSL = /* wgsl */ `
 ${VIEW_WGSL}
-struct U { offset: vec2f, coverage: f32, opacity: f32, logScale: f32, slot: f32, highlight: f32, pad: f32 };
+struct U { offset: vec2f, coverage: f32, opacity: f32, logScale: f32, slot: f32, highlight: f32, extrude: f32 };
 @group(1) @binding(0) var<uniform> u: U;
 ${RAMP_WGSL}
 @group(1) @binding(3) var<uniform> g: G;
@@ -120,35 +122,55 @@ ${RAMP_WGSL}
 @group(1) @binding(5) var<storage, read> top: array<u32, 2>;
 ${COMMON}
 struct V { @builtin(position) p: vec4f, @location(0) @interpolate(flat) color: vec4f, @location(1) @interpolate(flat) id: u32 };
+
+// Corner k of the cell (hexagons have 6, squares 4), in world units from its centre.
+fn corner(k: u32, sides: u32) -> vec2f {
+  if (sides == 6u) {
+    let a = (f32(k % 6u) * 60.0 + 30.0) * 3.14159265 / 180.0;
+    return vec2f(cos(a), sin(a)) * g.cell;
+  }
+  let sq = array<vec2f, 4>(vec2f(-0.5, -0.5), vec2f(0.5, -0.5), vec2f(0.5, 0.5), vec2f(-0.5, 0.5));
+  return sq[k % 4u] * g.cell;
+}
+
+// Vertices: the top as a fan of 3 x sides, then (when extruded) each side as two triangles.
 @vertex fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) b: u32) -> V {
   var o: V;
   let v = values[b];
   if (v < 0.0) { o.p = vec4f(2.0, 2.0, 2.0, 1.0); return o; }
+  let sides = select(4u, 6u, g.hex > 0.5);
   let centre = centreOf(b);
-  var corner: vec2f;
-  let k = vi % 3u;
-  let tri = vi / 3u;
-  if (g.hex > 0.5) {
-    // Six triangles around the centre.
-    if (k == 0u) { corner = vec2f(0.0); }
-    else {
-      let a = (f32(tri + k - 1u) * 60.0 + 30.0) * 3.14159265 / 180.0;
-      corner = vec2f(cos(a), sin(a)) * g.cell;
-    }
-  } else {
-    let sq = array<vec2f, 6>(vec2f(-0.5, -0.5), vec2f(0.5, -0.5), vec2f(-0.5, 0.5), vec2f(-0.5, 0.5), vec2f(0.5, -0.5), vec2f(0.5, 0.5));
-    corner = sq[min(vi, 5u)] * g.cell;
-    if (vi >= 6u) { o.p = vec4f(2.0, 2.0, 2.0, 1.0); return o; }
-  }
-  var cov = u.coverage;
-  if (f32(b) == u.highlight) { cov = 1.0; }
-  o.p = pixelsToClip(toPixels(centre + corner * cov + u.offset));
   let mx = max(bitcast<f32>(top[0]), 1e-12);
   var t = v / mx;
   if (u.logScale > 0.5) { t = log(1.0 + v) / log(1.0 + mx); }
-  var c = ramp(t);
-  if (f32(b) == u.highlight) { c = vec4f(mix(c.rgb, vec3f(1.0), 0.35), 1.0); }
-  o.color = vec4f(c.rgb, 1.0) * u.opacity;
+  var cov = u.coverage;
+  if (f32(b) == u.highlight) { cov = 1.0; }
+  let height = metresToPixels(clamp(v / mx, 0.0, 1.0) * u.extrude);
+  var local: vec2f;
+  var z = height;
+  var shade = 1.0;
+  if (vi < 3u * sides) {
+    let tri = vi / 3u;
+    let j = vi % 3u;
+    if (j == 0u) { local = vec2f(0.0); } else { local = corner(tri + j - 1u, sides); }
+  } else {
+    let s = (vi - 3u * sides) / 6u;
+    let j = (vi - 3u * sides) % 6u;
+    let a = corner(s, sides);
+    let c = corner(s + 1u, sides);
+    let ends = array<f32, 6>(0.0, 1.0, 0.0, 0.0, 1.0, 1.0);
+    let ups = array<f32, 6>(0.0, 0.0, 1.0, 1.0, 0.0, 1.0);
+    local = mix(a, c, ends[j]);
+    z = height * ups[j];
+    // Light from the north-west, in map terms; the sides facing away are darker.
+    let n = normalize(vec2f(c.y - a.y, a.x - c.x));
+    shade = 0.62 + 0.3 * max(0.0, dot(n, normalize(vec2f(-1.0, -1.0))));
+  }
+  o.p = project(toPixels(centre + local * cov + u.offset), z);
+  var col = ramp(t);
+  if (f32(b) == u.highlight) { col = vec4f(mix(col.rgb, vec3f(1.0), 0.35), 1.0); }
+  // Columns are opaque: see-through columns read as clutter.
+  o.color = vec4f(col.rgb * shade, 1.0) * select(u.opacity, 1.0, u.extrude > 0.0);
   o.id = b;
   return o;
 }
@@ -176,6 +198,7 @@ export class AggregateLayer implements Layer {
   private finishPipe?: GPUComputePipeline;
   private drawPipe?: GPURenderPipeline;
   private pickPipe?: GPURenderPipeline;
+  private columnPipe?: GPURenderPipeline;
   private computeGroup?: GPUBindGroup;
   private drawLayout?: GPUBindGroupLayout;
   private drawGroup?: GPUBindGroup;
@@ -211,7 +234,7 @@ export class AggregateLayer implements Layer {
   }
 
   /** Re-bins with new options (cell size, measure, shape); keeps the data on the GPU. */
-  update(changes: Partial<Pick<AggregateOptions, 'cellSize' | 'measure' | 'shape' | 'coverage' | 'opacity' | 'scale'>>): void {
+  update(changes: Partial<Pick<AggregateOptions, 'cellSize' | 'measure' | 'shape' | 'coverage' | 'opacity' | 'scale' | 'extrude'>>): void {
     const gridChanged = changes.cellSize !== undefined || changes.shape !== undefined;
     this.opts = { ...this.opts, ...changes };
     if (gridChanged && this.gpu) this.layoutGrid();
@@ -304,6 +327,16 @@ export class AggregateLayer implements Layer {
       vertex: { module: dm, entryPoint: 'vs' },
       fragment: { module: dm, entryPoint: 'fs', targets: [{ format: gpu.format, blend: BLEND_OVER }] },
       depthStencil: NO_STENCIL,
+      multisample: { count: gpu.samples },
+    });
+    // Columns: nearer faces hide farther ones.
+    this.columnPipe = device.createRenderPipeline({
+      label: 'bins columns',
+      layout: pl,
+      vertex: { module: dm, entryPoint: 'vs' },
+      fragment: { module: dm, entryPoint: 'fs', targets: [{ format: gpu.format, blend: BLEND_OVER }] },
+      primitive: { cullMode: 'none' },
+      depthStencil: DEPTH_TESTED,
       multisample: { count: gpu.samples },
     });
     this.pickPipe = device.createRenderPipeline({
@@ -409,17 +442,19 @@ export class AggregateLayer implements Layer {
 
   private uniforms(frame: Frame, slot: number): number[] {
     const [ox, oy] = originOffset(this.data.origin, frame.camera);
-    return [ox, oy, this.opts.coverage ?? 0.92, this.opts.opacity ?? 0.85, this.opts.scale === 'log' ? 1 : 0, slot, this.highlighted, 0];
+    return [ox, oy, this.opts.coverage ?? 0.92, this.opts.opacity ?? 0.85, this.opts.scale === 'log' ? 1 : 0, slot, this.highlighted, this.opts.extrude ?? 0];
   }
 
+  /** Vertices per cell: the top fan, and the sides when extruded. */
   private vertices(): number {
-    return this.grid.hex ? 18 : 6;
+    const sides = this.grid.hex ? 6 : 4;
+    return this.opts.extrude ? 9 * sides : 3 * sides;
   }
 
   draw(pass: GPURenderPassEncoder, frame: Frame): void {
     if (!this.visible || !this.count) return;
     const off = this.gpu!.arena.push(this.uniforms(frame, 0));
-    pass.setPipeline(this.drawPipe!);
+    pass.setPipeline(this.opts.extrude ? this.columnPipe! : this.drawPipe!);
     pass.setBindGroup(0, frame.viewGroup);
     pass.setBindGroup(1, this.group(), [off]);
     pass.draw(this.vertices(), this.bins);

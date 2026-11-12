@@ -1,6 +1,7 @@
 /**
  * Pointer, wheel, touch and keyboard input: drag to pan (with momentum), wheel or pinch to zoom about the pointer,
- * right-drag or two-finger twist to rotate, double-click to zoom in, arrows and +/− on the keyboard.
+ * right-drag (or Ctrl-drag) sideways to rotate and up or down to tilt, two-finger twist to rotate, double-click to zoom
+ * in, arrows and +/− on the keyboard, Shift with up and down arrows to tilt.
  */
 import type { Camera } from '../core/camera.js';
 
@@ -77,7 +78,9 @@ export function attachInput(el: HTMLElement, camera: Camera, cb: InputCallbacks)
       }
       lastPinch = now;
     } else if (rotating) {
+      // Sideways turns the map, up and down tilts it.
       camera.rotateAround(camera.bearing + dx * 0.4, camera.width / 2, camera.height / 2);
+      camera.pitch = Math.max(0, Math.min(60, camera.pitch - dy * 0.3));
     } else {
       camera.panBy(dx, dy);
       const now = performance.now();
@@ -148,7 +151,8 @@ export function attachInput(el: HTMLElement, camera: Camera, cb: InputCallbacks)
   const key = (e: KeyboardEvent) => {
     const step = 80;
     const k = e.key;
-    if (k === 'ArrowLeft') camera.panBy(step, 0);
+    if (e.shiftKey && (k === 'ArrowUp' || k === 'ArrowDown')) camera.pitch = Math.max(0, Math.min(60, camera.pitch + (k === 'ArrowUp' ? 10 : -10)));
+    else if (k === 'ArrowLeft') camera.panBy(step, 0);
     else if (k === 'ArrowRight') camera.panBy(-step, 0);
     else if (k === 'ArrowUp') camera.panBy(0, step);
     else if (k === 'ArrowDown') camera.panBy(0, -step);

@@ -138,7 +138,7 @@ export class SmaltMap {
       if (!this.destroyed) console.error(`smaltgl: the GPU device was lost (${info.reason}): ${info.message}`);
     });
     this.arena = new UniformArena(device);
-    this.viewBuffer = device.createBuffer({ label: 'smaltgl view', size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.viewBuffer = device.createBuffer({ label: 'smaltgl view', size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     const viewLayout = device.createBindGroupLayout({
       label: 'smaltgl view',
       entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }],
@@ -311,6 +311,7 @@ export class SmaltMap {
         this.camera.y = fy + (to.y - fy) * e;
         this.camera.zoom = from.zoom + (to.zoom - from.zoom) * e - arc;
         this.camera.bearing = (from.bearing ?? 0) + ((to.bearing - (from.bearing ?? 0)) * e);
+        this.camera.pitch = (from.pitch ?? 0) + ((to.pitch - (from.pitch ?? 0)) * e);
         this.camera.clamp();
         this.redraw();
         this.emit('move', this.camera.view());
@@ -400,7 +401,15 @@ export class SmaltMap {
           storeOp: 'discard',
         },
       ],
-      depthStencilAttachment: { view: this.stencil!.createView(), stencilClearValue: 0, stencilLoadOp: 'clear', stencilStoreOp: 'discard' },
+      depthStencilAttachment: {
+        view: this.stencil!.createView(),
+        depthClearValue: 1,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'discard',
+        stencilClearValue: 0,
+        stencilLoadOp: 'clear',
+        stencilStoreOp: 'discard',
+      },
       ...(this.timer && !this.timer.busy ? { timestampWrites: { querySet: this.timer.query, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 } } : {}),
     });
     pass.setViewport(0, 0, this.canvas.width, this.canvas.height, 0, 1);

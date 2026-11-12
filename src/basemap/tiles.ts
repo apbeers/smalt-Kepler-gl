@@ -23,5 +23,6 @@ export function coverTiles(camera: Camera, maxZoom = 14, marginPx = 0): TileId[]
   for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) out.push({ z, x, y });
   const cx = camera.x * n, cy = camera.y * n;
   out.sort((p, q) => Math.hypot(p.x + 0.5 - cx, p.y + 0.5 - cy) - Math.hypot(q.x + 0.5 - cx, q.y + 0.5 - cy));
-  return out;
+  // Pitched far towards the horizon, the view reaches many tiles: keep the nearest.
+  return out.slice(0, 64);
 }

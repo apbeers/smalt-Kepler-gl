@@ -25,8 +25,8 @@ export interface Gpu {
 
 /** Samples per pixel for the map's render pass: smooth edges on lines, fills and hexagons. */
 export const SAMPLES = 4;
-/** The stencil buffer that polygon fills are drawn through. */
-export const STENCIL_FORMAT: GPUTextureFormat = 'stencil8';
+/** Depth (for extruded columns in 3D) and the stencil buffer that polygon fills are drawn through. */
+export const STENCIL_FORMAT: GPUTextureFormat = 'depth24plus-stencil8';
 
 export async function initGpu(canvas: HTMLCanvasElement): Promise<Gpu> {
   if (typeof navigator === 'undefined' || !navigator.gpu) throw new GpuUnavailableError();
@@ -131,7 +131,8 @@ export class UniformArena {
 export const VIEW_WGSL = /* wgsl */ `
 struct View {
   scale: f32, cosr: f32, sinr: f32, ratio: f32,
-  half: vec2f, time: f32, spare: f32,
+  half: vec2f, time: f32, metres: f32,
+  psin: f32, pcos: f32, dist: f32, spare: f32,
 };
 @group(0) @binding(0) var<uniform> view: View;
 
@@ -140,8 +141,20 @@ fn toPixels(d: vec2f) -> vec2f {
   let p = d * view.scale;
   return vec2f(p.x * view.cosr - p.y * view.sinr, p.x * view.sinr + p.y * view.cosr);
 }
+// Pixels on the ground (rotated, from the centre) and a height in pixels to clip space, in perspective when pitched.
+fn project(p: vec2f, z: f32) -> vec4f {
+  let depth = view.dist - p.y * view.psin - z * view.pcos;
+  let yc = p.y * view.pcos - z * view.psin;
+  let w = max(depth, 1e-3) / view.dist;
+  let zn = clamp(depth / (view.dist * 64.0), 0.0, 1.0);
+  return vec4f(p.x / view.half.x, -yc / view.half.y, zn * w, w);
+}
 fn pixelsToClip(p: vec2f) -> vec4f {
-  return vec4f(p.x / view.half.x, -p.y / view.half.y, 0.0, 1.0);
+  return project(p, 0.0);
+}
+// Metres of height to pixels at the current zoom.
+fn metresToPixels(m: f32) -> f32 {
+  return m / view.metres * view.scale;
 }
 // A pixel offset on screen is not rotated: points and line widths keep their size.
 `;
@@ -149,11 +162,16 @@ fn pixelsToClip(p: vec2f) -> vec4f {
 /** The depth-stencil state of every pipeline that draws in the map's pass but leaves the stencil alone. */
 export const NO_STENCIL: GPUDepthStencilState = {
   format: STENCIL_FORMAT,
+  depthCompare: 'always',
+  depthWriteEnabled: false,
   stencilFront: { compare: 'always', passOp: 'keep' },
   stencilBack: { compare: 'always', passOp: 'keep' },
   stencilReadMask: 0,
   stencilWriteMask: 0,
 };
+
+/** For extruded geometry: tested against and written to the depth buffer, stencil untouched. */
+export const DEPTH_TESTED: GPUDepthStencilState = { ...NO_STENCIL, depthCompare: 'less', depthWriteEnabled: true };
 
 /** Premultiplied-alpha blending: what every map shader outputs. */
 export const BLEND_OVER: GPUBlendState = {

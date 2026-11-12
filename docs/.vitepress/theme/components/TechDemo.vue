@@ -27,6 +27,9 @@ const s = reactive({
   heatRadius: 18,
   cellSize: first.cellSize ?? 500,
   measure: 'count' as 'count' | 'mean' | 'sum',
+  pitch: 0,
+  extrude: false,
+  height: 1,
   width: 1.2,
   opacity: first.opacity ?? 0.85,
   additive: true,
@@ -77,6 +80,9 @@ onMounted(async () => {
     base = gl.basemap({ theme: s.theme === 'none' ? 'light' : s.theme })
     map = await gl.createMap(host.value!, { center: ds.value.view.center as [number, number], zoom: ds.value.view.zoom, basemap: s.theme === 'none' ? null : base })
     let last = 0
+    map.on('move', (v) => {
+      if (Math.abs((v.pitch ?? 0) - s.pitch) > 0.5) s.pitch = v.pitch ?? 0
+    })
     map.on('frame', (f) => {
       const now = performance.now()
       if (now - last < 200) return
@@ -188,7 +194,7 @@ async function build(): Promise<void> {
     else if (s.layer === 'hexbin' || s.layer === 'grid') {
       const weight = s.measure !== 'count' && cols ? cols[cb.column] : undefined
       const make = s.layer === 'hexbin' ? gl.hexbin : gl.grid
-      out.push(make({ id, data: points(), cellSize: s.cellSize, weight, measure: weight ? s.measure : 'count', ramp: (cb.categorical ? 'smalt' : cb.ramp) as 'smalt', opacity: s.opacity, filters, scale: s.measure === 'count' ? 'log' : 'linear' }))
+      out.push(make({ id, data: points(), cellSize: s.cellSize, weight, measure: weight ? s.measure : 'count', ramp: (cb.categorical ? 'smalt' : cb.ramp) as 'smalt', opacity: s.opacity, filters, scale: s.measure === 'count' ? 'log' : 'linear', extrude: s.extrude ? extrudeMetres() : 0 }))
     } else if (s.layer === 'arcs' && cols?.dropLng) {
       const n = Math.min(d.count, 300_000)
       tooltipNote.value = d.count > n ? `Arcs: the first ${fmtN(n)} rides` : ''
@@ -240,13 +246,31 @@ async function build(): Promise<void> {
     filterValues = s.filter ? c[s.filter] : undefined
     const rings = (d as PolygonsDataset & { rings?: Uint32Array }).rings
     const props = c.density ? { population: c.population, density: Array.from(c.density, Math.round), income: c.income, commute: Array.from(c.commute, Math.round) } : (d as { properties?: Record<string, ArrayLike<unknown>> }).properties ?? c
-    out.push(gl.polygons({ id, data: { starts: d.starts, lng: d.points.lng, lat: d.points.lat, rings }, color: (colorSpec(c[cb.column], !!cb.categorical, cb.ramp) ?? '#2F5BB7') as never, opacity: s.opacity, filters: gpuFilter(filterValues), properties: props }))
+    const hv = c[cb.column]
+    const extrude = s.extrude && hv ? { values: hv, scale: polygonScale(hv) } : undefined
+    out.push(gl.polygons({ id, extrude, data: { starts: d.starts, lng: d.points.lng, lat: d.points.lat, rings }, color: (colorSpec(c[cb.column], !!cb.categorical, cb.ramp) ?? '#2F5BB7') as never, opacity: s.opacity, filters: gpuFilter(filterValues), properties: props }))
   }
   layers = out
   map.setLayers(out)
   await map.renderNow()
   stats.build = performance.now() - t0
   updateLegend(cb)
+}
+
+/** Column heights for the cells: about a tenth of the data's extent at the top, times the height slider. */
+function extrudeMetres(): number {
+  const p = points()
+  const span = Math.max(p.bounds[2] - p.bounds[0], p.bounds[3] - p.bounds[1]) * 40075016 * Math.cos((ds.value.view.center[1] * Math.PI) / 180)
+  return Math.max(200, span * 0.12) * s.height
+}
+
+/** Polygon heights: the largest value stands about as tall as a tenth of the area's width. */
+function polygonScale(values: ArrayLike<number>): number {
+  let mx = 0
+  for (let i = 0; i < values.length; i++) if (values[i] > mx) mx = values[i]
+  const p = points()
+  const span = Math.max(p.bounds[2] - p.bounds[0], p.bounds[3] - p.bounds[1]) * 40075016 * Math.cos((ds.value.view.center[1] * Math.PI) / 180)
+  return ((span * 0.1) / Math.max(1e-9, mx)) * s.height
 }
 
 function updateLegend(cb: { column: string; ramp: string; categorical?: boolean }): void {
@@ -400,6 +424,8 @@ watch(
     s.cellSize = d.cellSize ?? 500
     s.opacity = d.opacity ?? 0.85
     s.measure = 'count'
+    s.extrude = false
+    s.pitch = 0
     tooltipNote.value = ''
     setTheme(d.theme)
     map?.setView({ center: d.view.center as [number, number], zoom: d.view.zoom, bearing: 0 })
@@ -416,7 +442,16 @@ function select(id: string, sizeIndex?: number): void {
   } else s.dataset = id
 }
 // Rebuilds: anything that changes what is uploaded.
-watch(() => [s.layer, s.colorBy, s.additive, s.filter, s.measure, s.greatCircle], () => {
+watch(() => s.pitch, (p) => map?.setView({ pitch: p }))
+watch(() => s.extrude, (on) => {
+  if (on && s.pitch < 20) s.pitch = 45
+})
+watch(() => s.height, () => {
+  const l = layers.find((x) => x.id === 'data') as unknown as { update?: (c: Record<string, unknown>) => void } | undefined
+  if (s.layer === 'hexbin' || s.layer === 'grid') l?.update?.({ extrude: s.extrude ? extrudeMetres() : 0 })
+  else if (s.layer === 'polygons' && s.extrude) void build()
+})
+watch(() => [s.layer, s.colorBy, s.additive, s.filter, s.measure, s.greatCircle, s.extrude], () => {
   if (s.filter) {
     const d = data
     const cols = d && d.kind !== 'paths' ? (d.columns as Record<string, ArrayLike<number>>) : undefined
@@ -513,7 +548,7 @@ async function benchmark(): Promise<void> {
   const t0 = performance.now()
   for (let i = 0; i < frames; i++) {
     const a = (i / frames) * Math.PI * 2
-    map.setView({ center: v0.center, zoom: v0.zoom + Math.sin(a) * 1.2, bearing: Math.sin(a) * 25 })
+    map.setView({ center: v0.center, zoom: v0.zoom + Math.sin(a) * 1.2, bearing: (v0.bearing ?? 0) + Math.sin(a) * 25, pitch: v0.pitch })
     await map.renderNow()
   }
   const ms = (performance.now() - t0) / frames
@@ -695,6 +730,13 @@ const layerNames: Record<LayerKind, string> = { scatter: 'Points', heatmap: 'Hea
         <span>Width <output>{{ s.width }} px</output></span>
         <input type="range" min="0.5" max="6" step="0.1" v-model.number="s.width" />
       </label>
+      <div class="checks" v-if="['hexbin', 'grid', 'polygons'].includes(s.layer)">
+        <label><input type="checkbox" v-model="s.extrude" data-test="extrude" /> 3D {{ s.layer === 'polygons' ? 'blocks' : 'columns' }} (height: {{ s.layer === 'polygons' ? s.colorBy : 'value' }})</label>
+      </div>
+      <label class="field" v-if="s.extrude && ['hexbin', 'grid', 'polygons'].includes(s.layer)">
+        <span>Height <output>{{ s.height.toFixed(1) }}×</output></span>
+        <input type="range" min="0.2" max="4" step="0.1" v-model.number="s.height" />
+      </label>
       <label class="field">
         <span>Opacity <output>{{ Math.round(s.opacity * 100) }}%</output></span>
         <input type="range" min="0.05" max="1" step="0.05" v-model.number="s.opacity" />
@@ -731,6 +773,10 @@ const layerNames: Record<LayerKind, string> = { scatter: 'Points', heatmap: 'Hea
         </div>
       </div>
 
+      <label class="field">
+        <span>Tilt <output>{{ Math.round(s.pitch) }}°</output></span>
+        <input type="range" min="0" max="60" step="1" v-model.number="s.pitch" data-test="pitch" />
+      </label>
       <div class="field">
         <span>Basemap</span>
         <div class="seg">
