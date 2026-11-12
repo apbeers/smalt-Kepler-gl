@@ -21,22 +21,22 @@ const first = DEMO_DATASETS.find((d) => d.id === q.get('dataset')) ?? DEMO_DATAS
 const s = reactive({
   dataset: first.id,
   size: first.sizes[Number(q.get('size') ?? first.start)] ?? first.sizes[first.start],
-  layer: first.layers[0] as LayerKind,
-  colorBy: first.colorBy[0].column,
+  layer: (first.layers.find((l) => l === q.get('layer')) ?? first.layers[0]) as LayerKind,
+  colorBy: first.colorBy.find((c) => c.column === q.get('color'))?.column ?? first.colorBy[0].column,
   radius: first.radius ?? 2,
   heatRadius: 18,
   cellSize: first.cellSize ?? 500,
   measure: 'count' as 'count' | 'mean' | 'sum',
   pitch: 0,
-  extrude: false,
+  extrude: q.get('3d') === '1',
   height: 1,
   width: 1.2,
   opacity: first.opacity ?? 0.85,
   additive: true,
   greatCircle: true,
   animate: true,
-  theme: first.theme as 'light' | 'dark' | 'none',
-  filter: '',
+  theme: (['light', 'dark', 'none'].includes(q.get('theme') ?? '') ? q.get('theme') : first.theme) as 'light' | 'dark' | 'none',
+  filter: first.filters.find((f) => f.column === q.get('filter'))?.column ?? '',
   lo: 0,
   hi: 1,
   min: 0,
@@ -81,6 +81,7 @@ onMounted(async () => {
     map = await gl.createMap(host.value!, { center: ds.value.view.center as [number, number], zoom: ds.value.view.zoom, basemap: s.theme === 'none' ? null : base })
     let last = 0
     map.on('move', (v) => {
+      updateLink()
       if (Math.abs((v.pitch ?? 0) - s.pitch) > 0.5) s.pitch = v.pitch ?? 0
     })
     map.on('frame', (f) => {
@@ -94,6 +95,8 @@ onMounted(async () => {
     })
     ;(window as unknown as { demo: unknown }).demo = { map, state: s, stats, load, select, ready: () => !busy.value }
     await load()
+    applyLinkView()
+    linked = true
   } catch (e) {
     if ((e as Error)?.name === 'GpuUnavailableError') gpuMissing.value = true
     else error.value = String((e as Error)?.message ?? e)
@@ -104,6 +107,58 @@ onBeforeUnmount(() => {
   s.playing = false
   map?.destroy()
 })
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Links: the demo's state in the address, so a view can be shared
+
+let linked = false
+/** After the first load: the filter range and the view from the link. */
+function applyLinkView(): void {
+  if (s.filter) {
+    const d = data
+    const cols = d && d.kind !== 'paths' ? (d.columns as Record<string, ArrayLike<number>>) : undefined
+    setFilterDomain(cols?.[s.filter])
+    const [lo, hi] = (q.get('range') ?? '').split(',').map(Number)
+    if (Number.isFinite(lo) && Number.isFinite(hi)) Object.assign(s, { lo, hi })
+  }
+  const v = (q.get('view') ?? '').split(',').map(Number)
+  if (v.length >= 3 && v.every(Number.isFinite)) {
+    map?.setView({ center: [v[0], v[1]], zoom: v[2], bearing: v[3] ?? 0, pitch: v[4] ?? 0 })
+    s.pitch = v[4] ?? 0
+  }
+}
+
+function link(): string {
+  const p = new URLSearchParams()
+  const d = ds.value
+  p.set('dataset', d.id)
+  p.set('size', String(Math.max(0, d.sizes.indexOf(s.size))))
+  p.set('layer', s.layer)
+  if (s.colorBy) p.set('color', s.colorBy)
+  if (s.filter) {
+    p.set('filter', s.filter)
+    p.set('range', `${+s.lo.toFixed(3)},${+s.hi.toFixed(3)}`)
+  }
+  if (s.extrude) p.set('3d', '1')
+  if (s.theme !== d.theme) p.set('theme', s.theme)
+  const v = map?.getView()
+  if (v) p.set('view', [v.center[0].toFixed(4), v.center[1].toFixed(4), v.zoom.toFixed(2), Math.round(v.bearing ?? 0), Math.round(v.pitch ?? 0)].join(','))
+  return `${location.pathname}?${p}`
+}
+
+let linkTimer = 0
+function updateLink(): void {
+  if (!linked || typeof history === 'undefined') return
+  clearTimeout(linkTimer)
+  linkTimer = window.setTimeout(() => history.replaceState(history.state, '', link()), 400)
+}
+const copied = ref(false)
+async function copyLink(): Promise<void> {
+  updateLink()
+  await navigator.clipboard?.writeText(location.origin + link())
+  copied.value = true
+  setTimeout(() => (copied.value = false), 1500)
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Loading
@@ -443,6 +498,7 @@ function select(id: string, sizeIndex?: number): void {
 }
 // Rebuilds: anything that changes what is uploaded.
 watch(() => s.pitch, (p) => map?.setView({ pitch: p }))
+watch(() => [s.dataset, s.size, s.layer, s.colorBy, s.filter, s.lo, s.hi, s.extrude, s.theme], () => updateLink())
 watch(() => s.extrude, (on) => {
   if (on && s.pitch < 20) s.pitch = 45
 })
@@ -451,12 +507,18 @@ watch(() => s.height, () => {
   if (s.layer === 'hexbin' || s.layer === 'grid') l?.update?.({ extrude: s.extrude ? extrudeMetres() : 0 })
   else if (s.layer === 'polygons' && s.extrude) void build()
 })
-watch(() => [s.layer, s.colorBy, s.additive, s.filter, s.measure, s.greatCircle, s.extrude], () => {
-  if (s.filter) {
+// A new filter column starts at its full range (in sync, before the rebuild below reads it).
+watch(
+  () => s.filter,
+  (f) => {
+    if (!f) return
     const d = data
     const cols = d && d.kind !== 'paths' ? (d.columns as Record<string, ArrayLike<number>>) : undefined
-    setFilterDomain(cols?.[s.filter])
-  }
+    setFilterDomain(cols?.[f])
+  },
+  { flush: 'sync' },
+)
+watch(() => [s.layer, s.colorBy, s.additive, s.filter, s.measure, s.greatCircle, s.extrude], () => {
   if (ds.value.source === 'smaltcy') void runCypher()
   else if (ds.value.source === 'smaltdb' && s.layer === 'arcs' && !(data as PointsDataset | undefined)?.columns.dropLng) {
     // Arcs need the drop-off columns: switch to the query that returns them.
@@ -787,6 +849,7 @@ const layerNames: Record<LayerKind, string> = { scatter: 'Points', heatmap: 'Hea
       </div>
       <div class="buttons">
         <button type="button" @click="fit">Fit to data</button>
+        <button type="button" @click="copyLink" data-test="link">{{ copied ? 'Copied' : 'Copy link' }}</button>
         <button type="button" @click="benchmark" data-test="bench">Benchmark</button>
       </div>
     </aside>

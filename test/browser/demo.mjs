@@ -89,6 +89,26 @@ await settle();
 f = await info();
 check(!f.error && f.objects === 2, `GeoJSON polygons: ${f.objects}${f.error ? ` — ${f.error}` : ''}`);
 
+// A link opens the same view: hexagons, 3D, a filter, tilted.
+await page.evaluate(() => window.demo.select('rides', 0));
+await settle();
+await state({ layer: 'hexbin', filter: 'hour' });
+await settle();
+await state({ lo: 17, hi: 19, extrude: true });
+await settle();
+await page.waitForTimeout(800);
+const url = page.url();
+const plain = decodeURIComponent(url);
+check(/layer=hexbin/.test(plain) && /filter=hour/.test(plain) && /3d=1/.test(plain) && /range=17,19/.test(plain), `the address holds the view (${plain.split("?")[1]})`);
+const linked = await context.newPage();
+watch(linked);
+await linked.goto(url);
+await linked.waitForFunction(() => window.demo && window.demo.ready() && window.demo.stats.build !== undefined, null, { timeout: 120000 });
+await linked.waitForTimeout(500);
+const restored = await linked.evaluate(() => ({ layer: window.demo.state.layer, lo: window.demo.state.lo, hi: window.demo.state.hi, extrude: window.demo.state.extrude, pitch: Math.round(window.demo.map.getView().pitch) }));
+check(restored.layer === 'hexbin' && restored.lo === 17 && restored.hi === 19 && restored.extrude && restored.pitch >= 20, `a link restores it (${JSON.stringify(restored)})`);
+await linked.close();
+
 // The benchmark.
 await page.locator('[data-test="bench"]').click();
 await page.waitForSelector('[data-test="bench-result"]', { timeout: 300000 });
