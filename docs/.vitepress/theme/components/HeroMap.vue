@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The home page's map: 20,000 flights between the world's busiest airports, flowing along great circles.
+// The home page's map: 3,000 flights between the world's busiest airports, flowing along great circles.
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import type { SmaltMap } from '@smaltworks/smaltgl'
 
@@ -12,9 +12,9 @@ onMounted(async () => {
     const gl = await import('@smaltworks/smaltgl')
     const { generate } = await import('@smaltworks/smaltgl/datasets')
     map = await gl.createMap(host.value!, { center: [25, 30], zoom: 1.2, basemap: gl.basemap({ theme: 'dark' }), tooltip: false })
-    const { dataset } = await generate('flights', 20_000)
+    const { dataset } = await generate('flights', 3_000)
     map.setLayers([
-      gl.arcs({ data: dataset.columns, greatCircle: true, animate: true, color: '#5CBDE8', targetColor: '#E5622F', width: 1, opacity: 0.35, additive: true }),
+      gl.arcs({ data: dataset.columns, greatCircle: true, animate: true, color: '#5CBDE8', targetColor: '#E5622F', width: 1.2, opacity: 0.55, additive: true }),
       gl.scatter({ data: { lng: dataset.places!.lng, lat: dataset.places!.lat }, color: '#FFFFFF', radius: 1.5, size: { values: dataset.places!.weight }, radiusMax: 5 }),
     ])
   } catch (e) {
