@@ -165,7 +165,8 @@ const roadWidths = {
 const casingOf = (w: ByZoom): ByZoom => w.map(([z, v]) => [z, v + (z < 12 ? 0.8 : 2)] as const);
 
 const labelSizes: Record<LabelKind, Omit<LabelStyle, 'color'>> = {
-  continent: { size: 13, weight: 600, upper: true, minZoom: 0, maxZoom: 2.5 },
+  // Continents name huge, vague areas (and some tiles add "Afro-Eurasia"): left out.
+  continent: { size: 13, weight: 600, upper: true, minZoom: 99 },
   country: { size: 13, weight: 600, minZoom: 1.5, maxZoom: 8 },
   ocean: { size: 13, italic: true, minZoom: 0, maxZoom: 6 },
   state: { size: 11, weight: 500, upper: true, minZoom: 4, maxZoom: 9 },

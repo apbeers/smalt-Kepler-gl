@@ -28,6 +28,11 @@ export const NYC_HOTSPOTS: readonly Place[] = [
   ['Bushwick', -73.921, 40.694, 1],
 ];
 
+/** Manhattan's shores, roughly: [lat, lng] going north. Pickups in Manhattan stay between them. */
+export const MANHATTAN_WEST: readonly (readonly [number, number])[] = [[40.7, -74.019], [40.75, -74.009], [40.8, -73.973], [40.85, -73.948], [40.88, -73.928]];
+export const MANHATTAN_EAST: readonly (readonly [number, number])[] = [[40.7, -73.997], [40.71, -73.977], [40.74, -73.972], [40.76, -73.957], [40.79, -73.937], [40.8, -73.928], [40.83, -73.934], [40.88, -73.91]];
+export const MANHATTAN = new Set(['Midtown', 'Times Square', 'Financial District', 'Chelsea', 'Upper East Side', 'Upper West Side', 'Greenwich Village', 'Lower East Side', 'Harlem']);
+
 /** Hotspots busiest late at night. */
 export const NYC_NIGHTLIFE = new Set(['Lower East Side', 'Williamsburg', 'Greenwich Village', 'Bushwick', 'Times Square']);
 

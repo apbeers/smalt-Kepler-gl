@@ -3,7 +3,7 @@
  * ten million. Each generator is deterministic for a seed, writes straight into typed arrays (no object per row), and
  * runs in a worker (worker.ts) so the page stays responsive while it works.
  */
-import { AIRPORTS, CHICAGO, FAULTS, LONDON, NYC_HOTSPOTS, NYC_NIGHTLIFE, PORTS, SEA_WAYPOINTS, STORE_CITIES, SUPPLY_SITES, type Place } from './places.js';
+import { AIRPORTS, CHICAGO, FAULTS, LONDON, MANHATTAN, MANHATTAN_EAST, MANHATTAN_WEST, NYC_HOTSPOTS, NYC_NIGHTLIFE, PORTS, SEA_WAYPOINTS, STORE_CITIES, SUPPLY_SITES, type Place } from './places.js';
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Randomness
@@ -111,6 +111,16 @@ export type Dataset = PointsDataset | ArcsDataset | PathsDataset | PolygonsDatas
 // ---------------------------------------------------------------------------------------------------------------------
 // Rides: ride-hailing pickups in New York
 
+/** Longitude of a shore line (points [lat, lng], going north) at a latitude. */
+function shoreAt(line: readonly (readonly [number, number])[], lat: number): number {
+  if (lat <= line[0][0]) return line[0][1];
+  for (let i = 0; i + 1 < line.length; i++) {
+    const [a, x] = line[i], [b, y] = line[i + 1];
+    if (lat <= b) return x + ((lat - a) / (b - a)) * (y - x);
+  }
+  return line[line.length - 1][1];
+}
+
 /**
  * Ride pickups across New York City: clustered in busy neighbourhoods, on a street grid tilted like Manhattan's,
  * with commuting peaks and late nights where the bars are. Columns: lng, lat, hour (0–24), fare (dollars),
@@ -126,16 +136,25 @@ export function rides(n: number, seed = 1) {
   for (let i = 0; i < n; i++) {
     const h = NYC_HOTSPOTS[pick()];
     const airport = h[0].includes('Airport');
-    const spread = airport ? 0.5 : 1.1; // km
-    // Along and across the grid, in km; snap one of them to streets (80 m apart) or avenues (270 m apart).
-    let u = g() * spread, v = g() * spread * 1.6;
-    const s = r();
-    if (s < 0.45) u = Math.round(u / 0.27) * 0.27 + g() * 0.01;
-    else if (s < 0.9) v = Math.round(v / 0.08) * 0.08 + g() * 0.008;
-    const east = u * ca + v * sa, north = -u * sa + v * ca;
-    const la = h[2] + north / KM_PER_DEG;
+    const manhattan = MANHATTAN.has(h[0]);
+    const spread = airport ? 0.4 : manhattan ? 0.45 : 0.8; // km across the grid; twice that along it
+    let la = 0, lo = 0;
+    // Draw until the pickup is on the right side of the rivers (a few tries at most).
+    for (let tries = 0; tries < 8; tries++) {
+      // Along and across the grid, in km; snap one of them to streets (80 m apart) or avenues (270 m apart).
+      let u = g() * spread, v = g() * spread * 2;
+      const s = r();
+      if (s < 0.45) u = Math.round(u / 0.27) * 0.27 + g() * 0.01;
+      else if (s < 0.9) v = Math.round(v / 0.08) * 0.08 + g() * 0.008;
+      const east = u * ca + v * sa, north = -u * sa + v * ca;
+      la = h[2] + north / KM_PER_DEG;
+      lo = h[1] + east / (KM_PER_DEG * Math.cos((la * Math.PI) / 180));
+      if (airport) break;
+      const west = shoreAt(MANHATTAN_WEST, la), eastShore = shoreAt(MANHATTAN_EAST, la);
+      if (manhattan ? lo > west + 0.001 && lo < eastShore - 0.001 : lo > eastShore + 0.002) break;
+    }
     lat[i] = la;
-    lng[i] = h[1] + east / (KM_PER_DEG * Math.cos((la * Math.PI) / 180));
+    lng[i] = lo;
     // When: commuting peaks, a daytime base, and late nights in nightlife areas.
     const k = r();
     let t: number;

@@ -1,4 +1,4 @@
-// The benchmark page: window.bench(kind, rows) builds one layer on generated data, flies a 60-frame camera tour,
+// The benchmark page: window.bench(kind, rows) builds one layer on generated data, flies a 30-frame camera tour,
 // waiting for the GPU after each frame, and returns the times.
 import { createMap, scatter, heatmap, hexbin, arcs, trips, projectColumns, type Layer } from '../../../src/index.js';
 import { rides, flights, fleet } from '../../../src/datasets/generators.js';
@@ -29,7 +29,7 @@ const map = await createMap(document.getElementById('map')!, { center: [-73.95, 
   const t1 = performance.now();
   await map.renderNow();
   const first = performance.now() - t1;
-  const frames = 60;
+  const frames = Number(new URLSearchParams(location.search).get('frames') ?? 30);
   const t2 = performance.now();
   for (let i = 0; i < frames; i++) {
     const a = (i / frames) * Math.PI * 2;

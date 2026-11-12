@@ -28,7 +28,7 @@ const s = reactive({
   cellSize: first.cellSize ?? 500,
   measure: 'count' as 'count' | 'mean' | 'sum',
   width: 1.2,
-  opacity: 0.85,
+  opacity: first.opacity ?? 0.85,
   additive: true,
   greatCircle: true,
   animate: true,
@@ -367,6 +367,7 @@ watch(
     s.filter = ''
     s.radius = d.radius ?? 2
     s.cellSize = d.cellSize ?? 500
+    s.opacity = d.opacity ?? 0.85
     s.measure = 'count'
     tooltipNote.value = ''
     setTheme(d.theme)

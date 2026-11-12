@@ -24,6 +24,7 @@ export interface DemoDataset {
   /** Default layer settings. */
   readonly radius?: number
   readonly cellSize?: number
+  readonly opacity?: number
 }
 
 export const DEMO_DATASETS: readonly DemoDataset[] = [
@@ -75,6 +76,7 @@ export const DEMO_DATASETS: readonly DemoDataset[] = [
     view: { center: [20, 30], zoom: 1.3 },
     theme: 'dark',
     radius: 2,
+    opacity: 0.45,
   },
   {
     id: 'fleet',
