@@ -34,6 +34,7 @@ changes every frame: filtering, binning, density, time.
 
 - The mark, the product colour and the social card (smalt-brand).
 - The repository's final name and home (this repository is a temporary home).
-- Labels along lines (road and river names), a globe view, 3D extrusion.
+- A globe view. (Labels along roads and rivers, and 3D with a tilting camera and extrusion, are done.)
+- GitHub Pages must be switched on once in the repository's settings (Source: GitHub Actions) for the docs to deploy.
 - A chart palette in smalt-brand: the ramps here are provisional, built from the Kiln tokens.
 - Hosting our own tiles before launch.

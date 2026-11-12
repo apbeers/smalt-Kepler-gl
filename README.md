@@ -11,9 +11,10 @@ polygons. Data goes to the GPU once; binning, density, filters and playback run 
 OpenStreetMap data from OpenFreeMap, drawn by smaltgl's own renderer in the same GPU pass. Layers take smaltdb's
 columnar query results and smaltcy's Cypher results as they are.
 
-> **Status: 0.1.0, work in progress.** Seven layer kinds, GPU filters and playback, picking and tooltips, the vector
-> basemap with labels in light and dark, adapters for smaltdb and smaltcy, generated sample datasets and a tech demo.
-> WebGPU only ([ADR 0001](docs/adr/0001-smaltgl.md)).
+> **Status: 0.1.0, work in progress.** Seven layer kinds, 3D (a tilting camera, extruded columns and polygons), GPU
+> filters and playback, picking and tooltips, the vector basemap with place, road and river labels in light and dark,
+> GeoJSON and CSV import, adapters for smaltdb and smaltcy, generated sample datasets and a tech demo with shareable
+> links. WebGPU only ([ADR 0001](docs/adr/0001-smaltgl.md)).
 
 ## Use it
 
