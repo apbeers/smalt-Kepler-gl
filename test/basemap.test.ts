@@ -101,3 +101,19 @@ describe('style', () => {
     }
   });
 });
+
+describe('line labels', () => {
+  it('puts a road name halfway along its line, facing along it', () => {
+    const t = encodeTile([
+      { name: 'transportation_name', features: [{ type: 2, properties: { class: 'primary', name: 'Broadway' }, geometry: [[[0, 1000], [2000, 1000], [2000, 3000]]] }] },
+      { name: 'waterway', features: [{ type: 2, properties: { class: 'river', name: 'Hudson' }, geometry: [[[100, 0], [100, 50]]] }] },
+    ]);
+    const g = buildTile(t, 15);
+    const road = g.labels.find((l) => l.text === 'Broadway')!;
+    expect(road.kind).toBe(LABEL_KINDS.indexOf('road'));
+    // 4,000 units long: halfway is the corner at (2000, 1000), where the line still runs east.
+    expect([road.x, road.y, road.dx, road.dy]).toEqual([2000, 1000, 1, 0]);
+    // A river too short to hold its name gets none.
+    expect(g.labels.some((l) => l.text === 'Hudson')).toBe(false);
+  });
+});

@@ -17,11 +17,11 @@ export type FillGroup = (typeof FILL_GROUPS)[number];
 export type LineGroup = (typeof LINE_GROUPS)[number];
 
 /** Label kinds, most important first: when labels collide, the earlier kind wins. */
-export const LABEL_KINDS = ['continent', 'country', 'ocean', 'state', 'capital', 'city', 'sea', 'town', 'lake', 'village', 'suburb', 'road'] as const;
+export const LABEL_KINDS = ['continent', 'country', 'ocean', 'state', 'capital', 'city', 'sea', 'town', 'lake', 'village', 'suburb', 'road', 'river'] as const;
 export type LabelKind = (typeof LABEL_KINDS)[number];
 
 /** The vector tile layers the style reads; the decoder skips the rest. */
-export const SOURCE_LAYERS = new Set(['water', 'landcover', 'landuse', 'park', 'aeroway', 'building', 'waterway', 'transportation', 'boundary', 'place', 'water_name']);
+export const SOURCE_LAYERS = new Set(['water', 'landcover', 'landuse', 'park', 'aeroway', 'building', 'waterway', 'transportation', 'boundary', 'place', 'water_name', 'transportation_name']);
 
 type Props = Record<string, MvtValue>;
 
@@ -106,6 +106,18 @@ export function labelOf(layer: string, p: Props): { kind: LabelKind; text: strin
   return undefined;
 }
 
+const ROAD_RANK: Record<string, number> = { motorway: 1, trunk: 2, primary: 3, secondary: 4, tertiary: 5, minor: 6, service: 8 };
+
+/** A label along a line: road and river names. */
+export function lineLabelOf(layer: string, p: Props): { kind: LabelKind; text: string; rank: number } | undefined {
+  const text = String(p['name:en'] ?? p.name_en ?? p['name:latin'] ?? p.name ?? '');
+  if (!text) return undefined;
+  const cls = String(p.class ?? '');
+  if (layer === 'transportation_name' && cls in ROAD_RANK) return { kind: 'road', text, rank: ROAD_RANK[cls] };
+  if (layer === 'waterway' && (cls === 'river' || cls === 'canal')) return { kind: 'river', text, rank: cls === 'river' ? 1 : 2 };
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Themes
 
@@ -177,14 +189,15 @@ const labelSizes: Record<LabelKind, Omit<LabelStyle, 'color'>> = {
   lake: { size: 11, italic: true, minZoom: 7 },
   village: { size: 11, minZoom: 11 },
   suburb: { size: 11, upper: true, minZoom: 11.5 },
-  road: { size: 11, minZoom: 15 },
+  road: { size: 10.5, weight: 500, minZoom: 14 },
+  river: { size: 11, italic: true, minZoom: 11 },
 };
 
 function labels(text: string, soft: string, water: string): Record<LabelKind, LabelStyle> {
   const out = {} as Record<LabelKind, LabelStyle>;
   for (const k of LABEL_KINDS) {
     const s = labelSizes[k];
-    const color = k === 'ocean' || k === 'sea' || k === 'lake' ? water : k === 'suburb' || k === 'village' || k === 'state' ? soft : text;
+    const color = k === 'ocean' || k === 'sea' || k === 'lake' || k === 'river' ? water : k === 'suburb' || k === 'village' || k === 'state' || k === 'road' ? soft : text;
     out[k] = { ...s, color };
   }
   return out;

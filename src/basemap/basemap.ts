@@ -120,9 +120,11 @@ ${VIEW_WGSL}
 @group(1) @binding(1) var samp: sampler;
 struct V { @builtin(position) p: vec4f, @location(0) uv: vec2f, @location(1) @interpolate(flat) alpha: f32 };
 const C = array<vec2f, 6>(vec2f(0, 0), vec2f(1, 0), vec2f(0, 1), vec2f(0, 1), vec2f(1, 0), vec2f(1, 1));
-@vertex fn vs(@builtin(vertex_index) vi: u32, @location(0) rect: vec4f, @location(1) uv: vec4f, @location(2) alpha: f32) -> V {
+// rect: centre and size in CSS pixels; rot: cos and sin of the label's angle on screen.
+@vertex fn vs(@builtin(vertex_index) vi: u32, @location(0) rect: vec4f, @location(1) uv: vec4f, @location(2) alpha: f32, @location(3) rot: vec2f) -> V {
   let c = C[vi];
-  let px = rect.xy + c * rect.zw;
+  let q = (c - 0.5) * rect.zw;
+  let px = rect.xy + vec2f(q.x * rot.x - q.y * rot.y, q.x * rot.y + q.y * rot.x);
   return V(vec4f(px.x / view.half.x - 1.0, 1.0 - px.y / view.half.y, 0.0, 1.0), mix(uv.xy, uv.zw, c), alpha);
 }
 @fragment fn fs(v: V) -> @location(0) vec4f {
@@ -280,12 +282,13 @@ export class Basemap implements MapBasemap {
         entryPoint: 'vs',
         buffers: [
           {
-            arrayStride: 36,
+            arrayStride: 44,
             stepMode: 'instance',
             attributes: [
               { shaderLocation: 0, offset: 0, format: 'float32x4' },
               { shaderLocation: 1, offset: 16, format: 'float32x4' },
               { shaderLocation: 2, offset: 32, format: 'float32' },
+              { shaderLocation: 3, offset: 36, format: 'float32x2' },
             ],
           },
         ],
@@ -524,7 +527,7 @@ export class Basemap implements MapBasemap {
     const camera = frame.camera;
     const z = camera.zoom;
     const theme = this.theme;
-    type Cand = { kind: number; rank: number; text: string; sx: number; sy: number; key: string };
+    type Cand = { kind: number; rank: number; text: string; sx: number; sy: number; key: string; angle: number };
     const cands: Cand[] = [];
     const seen = new Set<string>();
     for (const { tile, clip } of this.lastPlan) {
@@ -539,9 +542,19 @@ export class Basemap implements MapBasemap {
         const key = `${l.kind}|${l.text}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const [sx, sy] = camera.worldToScreen(tile.id.x / n + l.x / g.extent / n, tile.id.y / n + l.y / g.extent / n);
+        const wx = tile.id.x / n + l.x / g.extent / n, wy = tile.id.y / n + l.y / g.extent / n;
+        const [sx, sy] = camera.worldToScreen(wx, wy);
         if (sx < -100 || sy < -40 || sx > camera.width + 100 || sy > camera.height + 40) continue;
-        cands.push({ kind: l.kind, rank: l.rank, text: l.text, sx, sy, key });
+        let angle = 0;
+        if (l.dx !== undefined && l.dy !== undefined) {
+          // The line's direction on screen, kept readable (never upside down).
+          const step = 1 / g.extent / n;
+          const [ex, ey] = camera.worldToScreen(wx + l.dx * step * 64, wy + l.dy! * step * 64);
+          angle = Math.atan2(ey - sy, ex - sx);
+          if (angle > Math.PI / 2) angle -= Math.PI;
+          else if (angle < -Math.PI / 2) angle += Math.PI;
+        }
+        cands.push({ kind: l.kind, rank: l.rank, text: l.text, sx, sy, key, angle });
       }
     }
     // Labels shown last frame first among equals: steadier as the map moves.
@@ -559,20 +572,24 @@ export class Basemap implements MapBasemap {
       const e = this.atlas.get(c.text, st, theme.halo);
       if (!e || this.atlas.generation !== gen) break;
       const w = e.w / r, h = e.h / r;
-      // Snap to device pixels so text stays crisp.
-      const x = Math.round((c.sx - w / 2) * r) / r, y = Math.round((c.sy - h / 2) * r) / r;
-      if (!grid.tryPlace([x + 2, y + 3, x + w - 2, y + h - 3])) continue;
+      const cos = Math.cos(c.angle), sin = Math.sin(c.angle);
+      // Level labels snap to device pixels so text stays crisp; turned ones can't.
+      const cx = c.angle ? c.sx : (Math.round((c.sx - w / 2) * r) + (e.w / 2)) / r;
+      const cy = c.angle ? c.sy : (Math.round((c.sy - h / 2) * r) + (e.h / 2)) / r;
+      // The turned box's bounds, a little inside the halo.
+      const bw = (Math.abs(cos) * (w - 4) + Math.abs(sin) * (h - 6)) / 2, bh = (Math.abs(sin) * (w - 4) + Math.abs(cos) * (h - 6)) / 2;
+      if (!grid.tryPlace([cx - bw, cy - bh, cx + bw, cy + bh])) continue;
       shown.add(c.key);
-      inst.push(x, y, w, h, e.x / atlasSize, e.y / atlasSize, (e.x + e.w) / atlasSize, (e.y + e.h) / atlasSize, 1);
+      inst.push(cx, cy, w, h, e.x / atlasSize, e.y / atlasSize, (e.x + e.w) / atlasSize, (e.y + e.h) / atlasSize, 1, cos, sin);
     }
     this.shownLabels = shown;
     if (!inst.length) return;
-    const count = inst.length / 9;
+    const count = inst.length / 11;
     const device = this.gpu!.device;
     if (count > this.labelCapacity) {
       this.labelBuffer?.destroy();
       this.labelCapacity = Math.max(64, count * 2);
-      this.labelBuffer = device.createBuffer({ label: 'labels', size: this.labelCapacity * 36, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+      this.labelBuffer = device.createBuffer({ label: 'labels', size: this.labelCapacity * 44, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     }
     device.queue.writeBuffer(this.labelBuffer!, 0, new Float32Array(inst));
     pass.setPipeline(this.labelPipe!);

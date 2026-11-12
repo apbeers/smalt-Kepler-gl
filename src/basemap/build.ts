@@ -4,7 +4,7 @@
  * as a rounded capsule) and labels as points. Runs in the tile worker.
  */
 import { decodeTile, GeomType, type MvtLayer } from './mvt.js';
-import { FILL_GROUPS, LINE_GROUPS, LABEL_KINDS, SOURCE_LAYERS, fillGroup, lineGroup, labelOf } from './style.js';
+import { FILL_GROUPS, LINE_GROUPS, LABEL_KINDS, SOURCE_LAYERS, fillGroup, lineGroup, labelOf, lineLabelOf } from './style.js';
 
 export interface Range {
   /** Index into FILL_GROUPS or LINE_GROUPS. */
@@ -21,6 +21,9 @@ export interface TileLabel {
   readonly x: number;
   readonly y: number;
   readonly rank: number;
+  /** Along a line: the line's direction there, in tile units (the label turns to follow it). */
+  readonly dx?: number;
+  readonly dy?: number;
 }
 
 export interface TileGeometry {
@@ -55,6 +58,12 @@ export function buildFromLayers(layers: Map<string, MvtLayer>, z: number): TileG
       } else if (f.type === GeomType.LineString) {
         const g = lineGroup(name, f.properties);
         if (g) lineParts[LINE_GROUPS.indexOf(g)].push(...f.geometry);
+        const ll = lineLabelOf(name, f.properties);
+        if (ll) for (const part of f.geometry) {
+          const at = midpoint(part);
+          // Only lines long enough to hold a name (about a fifth of the tile).
+          if (at && at.length > 800) labels.push({ kind: LABEL_KINDS.indexOf(ll.kind), text: ll.text, x: at.x, y: at.y, rank: ll.rank, dx: at.dx, dy: at.dy });
+        }
       } else if (f.type === GeomType.Point) {
         const l = labelOf(name, f.properties);
         if (l) for (const part of f.geometry) labels.push({ kind: LABEL_KINDS.indexOf(l.kind), text: l.text, x: part[0], y: part[1], rank: l.rank });
@@ -111,6 +120,24 @@ export function buildFromLayers(layers: Map<string, MvtLayer>, z: number): TileG
   });
 
   return { extent, fillVerts, fillIndex, fills, segments, lines: ranges, labels };
+}
+
+/** The point halfway along a line, the line's direction there, and its length (tile units). */
+export function midpoint(line: readonly number[]): { x: number; y: number; dx: number; dy: number; length: number } | undefined {
+  let length = 0;
+  for (let i = 0; i + 3 < line.length; i += 2) length += Math.hypot(line[i + 2] - line[i], line[i + 3] - line[i + 1]);
+  if (!length) return undefined;
+  let run = 0;
+  for (let i = 0; i + 3 < line.length; i += 2) {
+    const dx = line[i + 2] - line[i], dy = line[i + 3] - line[i + 1];
+    const d = Math.hypot(dx, dy);
+    if (run + d >= length / 2) {
+      const t = (length / 2 - run) / d;
+      return { x: line[i] + dx * t, y: line[i + 1] + dy * t, dx: dx / d, dy: dy / d, length };
+    }
+    run += d;
+  }
+  return undefined;
 }
 
 /** The transferable buffers of a tile's geometry. */
