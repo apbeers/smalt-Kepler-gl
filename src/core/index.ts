@@ -3,3 +3,4 @@ export * from './mercator.js';
 export * from './camera.js';
 export * from './color.js';
 export * from './gpu.js';
+export * from './contract.js';

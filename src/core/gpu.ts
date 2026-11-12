@@ -60,6 +60,18 @@ export async function initGpu(canvas: HTMLCanvasElement): Promise<Gpu> {
   return { device, context, format, timestamps };
 }
 
+/**
+ * Draws on a canvas with a device you already have (shared with your own renderer, or with another map). The device
+ * stays yours: the map never destroys it.
+ */
+export function connectGpu(canvas: HTMLCanvasElement | OffscreenCanvas, device: GPUDevice): Gpu {
+  const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
+  if (!context) throw new GpuUnavailableError('The canvas has no WebGPU context');
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  context.configure({ device, format, alphaMode: 'premultiplied' });
+  return { device, context, format, timestamps: device.features.has('timestamp-query') };
+}
+
 /** A GPU buffer holding a typed array, padded to 4 bytes. */
 export function bufferFrom(device: GPUDevice, data: ArrayBufferView, usage: GPUBufferUsageFlags, label?: string): GPUBuffer {
   const size = Math.max(16, Math.ceil(data.byteLength / 4) * 4);
