@@ -48,14 +48,22 @@ camera, filters, time ─→ uniforms (every frame) ─→ compute passes (bins,
 tile workers: fetch → decode vector tiles → style groups → buffers
 ```
 
-| Entry point (`@smaltworks/smaltgl…`) | Source | Use it to |
-| --- | --- | --- |
-| `.` | `src/index.ts` | Everything but the datasets: `createMap`, layers, basemap, adapters |
-| `/core` | `src/core/` | Projection, camera, colours and ramps, WebGPU setup |
-| `/layers` | `src/layers/` | `scatter`, `heatmap`, `hexbin`, `grid`, `arcs`, `paths`, `trips`, `polygons` |
-| `/basemap` | `src/basemap/` | The OpenStreetMap basemap, its themes, the vector tile decoder |
-| `/data` | `src/data/` | `querySmaltdb`, `loadSmaltdb`, `graphLayers` (smaltcy) |
-| `/datasets` | `src/datasets/` | `generate` and the sample data generators |
+Each piece is an entry point of its own: import one, and your bundle holds it and what it is built on, nothing more.
+The map, the layers and the basemap meet only in `core/contract.ts`, so each can be used, replaced or worked on
+without the others. [Using the pieces](docs/guide/modules.md) has the full table and an example of each;
+`test/modules.test.ts` keeps the boundaries.
+
+| Entry point (`@smaltworks/smaltgl…`) | Use it to |
+| --- | --- |
+| `.` | Everything but the datasets |
+| `/core` | Projection, camera, colours, WebGPU setup; the contracts between pieces |
+| `/map` | `createMap`, or the `MapRenderer` alone (any canvas, your own device), input, tooltip, attribution |
+| `/layers`, `/scatter`, `/heatmap`, `/aggregate`, `/arcs`, `/paths`, `/polygons` | Every layer, or one |
+| `/layer-kit` | Write a layer of your own ([guide](docs/guide/custom-layers.md)) |
+| `/basemap` | The basemap, or its parts: `TileSource` (no GPU), `TileRenderer`, `LabelRenderer` |
+| `/vector-tiles` | Decode vector tiles and build their geometry, with no GPU |
+| `/data`, `/smaltdb`, `/smaltcy`, `/geojson` | Data adapters, together or one at a time |
+| `/datasets` | Sample data generators, in a worker or not |
 
 ## Development
 

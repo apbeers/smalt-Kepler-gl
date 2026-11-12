@@ -5,6 +5,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowR
 import type { SmaltMap, Basemap, Layer, GpuFilter, Projected, ScatterLayer, HeatmapLayer, AggregateLayer, ArcLayer, PathLayer, PolygonLayer } from '@smaltworks/smaltgl'
 import type { Dataset, PointsDataset, ArcsDataset, PathsDataset, PolygonsDataset } from '@smaltworks/smaltgl/datasets'
 import { DEMO_DATASETS, SQL_PRESETS, CYPHER_PRESETS, type DemoDataset, type LayerKind, type Preset } from '../demo-datasets'
+import { buildLayers, extrudeMetres, legendFor, projectDataset, type LayerSettings } from '../demo/build-layers'
+import { datasetFromGeoJSON } from '../demo/files'
+import { decodeLink, encodeLink } from '../demo/links'
 
 type GL = typeof import('@smaltworks/smaltgl')
 let gl: GL
@@ -115,36 +118,33 @@ onBeforeUnmount(() => {
 let linked = false
 /** After the first load: the filter range and the view from the link. */
 function applyLinkView(): void {
+  const l = decodeLink(q)
   if (s.filter) {
     const d = data
     const cols = d && d.kind !== 'paths' ? (d.columns as Record<string, ArrayLike<number>>) : undefined
     setFilterDomain(cols?.[s.filter])
-    const [lo, hi] = (q.get('range') ?? '').split(',').map(Number)
-    if (Number.isFinite(lo) && Number.isFinite(hi)) Object.assign(s, { lo, hi })
+    const r = l.filter?.range
+    if (r && Number.isFinite(r[0]) && Number.isFinite(r[1])) Object.assign(s, { lo: r[0], hi: r[1] })
   }
-  const v = (q.get('view') ?? '').split(',').map(Number)
-  if (v.length >= 3 && v.every(Number.isFinite)) {
-    map?.setView({ center: [v[0], v[1]], zoom: v[2], bearing: v[3] ?? 0, pitch: v[4] ?? 0 })
-    s.pitch = v[4] ?? 0
+  if (l.view) {
+    map?.setView({ center: l.view.center as [number, number], zoom: l.view.zoom, bearing: l.view.bearing, pitch: l.view.pitch })
+    s.pitch = l.view.pitch ?? 0
   }
 }
 
 function link(): string {
-  const p = new URLSearchParams()
   const d = ds.value
-  p.set('dataset', d.id)
-  p.set('size', String(Math.max(0, d.sizes.indexOf(s.size))))
-  p.set('layer', s.layer)
-  if (s.colorBy) p.set('color', s.colorBy)
-  if (s.filter) {
-    p.set('filter', s.filter)
-    p.set('range', `${+s.lo.toFixed(3)},${+s.hi.toFixed(3)}`)
-  }
-  if (s.extrude) p.set('3d', '1')
-  if (s.theme !== d.theme) p.set('theme', s.theme)
   const v = map?.getView()
-  if (v) p.set('view', [v.center[0].toFixed(4), v.center[1].toFixed(4), v.zoom.toFixed(2), Math.round(v.bearing ?? 0), Math.round(v.pitch ?? 0)].join(','))
-  return `${location.pathname}?${p}`
+  return `${location.pathname}?${encodeLink({
+    dataset: d.id,
+    sizeIndex: d.sizes.indexOf(s.size),
+    layer: s.layer,
+    color: s.colorBy || undefined,
+    filter: s.filter ? { column: s.filter, range: [s.lo, s.hi] } : undefined,
+    extrude: s.extrude,
+    theme: s.theme !== d.theme ? s.theme : undefined,
+    view: v ? { center: v.center, zoom: v.zoom, bearing: v.bearing, pitch: v.pitch } : undefined,
+  })}`
 }
 
 let linkTimer = 0
@@ -198,22 +198,8 @@ async function load(): Promise<void> {
 }
 
 function points(): Projected {
-  if (projected) return projected
-  const d = data!
-  if (d.kind === 'points') projected = gl.projectColumns(d.columns.lng, d.columns.lat)
-  else if (d.kind === 'arcs') projected = gl.projectColumns(d.columns.sourceLng, d.columns.sourceLat)
-  else if (d.kind === 'paths' || d.kind === 'polygons') projected = gl.projectColumns(d.points.lng, d.points.lat)
-  return projected!
-}
-
-function colorSpec(values: ArrayLike<number> | undefined, categorical: boolean, ramp: string) {
-  if (!values) return undefined
-  return categorical ? { values, categorical: true } : { values, ramp: ramp as 'smalt' }
-}
-
-function gpuFilter(values: ArrayLike<number> | undefined): GpuFilter[] {
-  if (!values || !s.filter) return []
-  return [{ values: values instanceof Float32Array ? values : Float32Array.from(values), range: [s.lo, s.hi] }]
+  projected ??= projectDataset(gl, data!)
+  return projected
 }
 
 function setFilterDomain(values: ArrayLike<number> | undefined): void {
@@ -230,118 +216,57 @@ function setFilterDomain(values: ArrayLike<number> | undefined): void {
   s.hi = s.max
 }
 
-/** Builds the layers for the current data and settings, and times the upload and the first frame. */
+/** The current settings, for buildLayers. */
+function settings(): LayerSettings {
+  const colour = ds.value.colorBy.find((c) => c.column === s.colorBy) ?? ds.value.colorBy[0]
+  return {
+    layer: s.layer,
+    colour,
+    filter: s.filter ? { column: s.filter, range: [s.lo, s.hi] } : undefined,
+    radius: s.radius,
+    heatRadius: s.heatRadius,
+    cellSize: s.cellSize,
+    measure: s.measure,
+    width: s.width,
+    opacity: s.opacity,
+    additive: s.additive,
+    greatCircle: s.greatCircle,
+    animate: s.animate,
+    extrude: s.extrude,
+    height: s.height,
+  }
+}
+
+/** Builds the layers for the current data and settings (demo/build-layers.ts), and times the upload and first frame. */
 async function build(): Promise<void> {
   if (!map || !data) return
   const t0 = performance.now()
-  const d = data
-  const cb = ds.value.colorBy.find((c) => c.column === s.colorBy) ?? ds.value.colorBy[0]
-  const out: Layer[] = []
-  const id = 'data'
-  let filterValues: ArrayLike<number> | undefined
-  if (d.kind === 'points' || (d.kind === 'paths' && s.layer !== 'trips' && s.layer !== 'paths')) {
-    const cols = d.kind === 'points' ? d.columns : undefined
-    const color = cols ? colorSpec(cols[cb.column], !!cb.categorical, cb.ramp) : undefined
-    filterValues = cols && s.filter ? cols[s.filter] : undefined
-    const filters = gpuFilter(filterValues)
-    const props = cols ? Object.fromEntries(Object.entries(cols).filter(([k]) => !/lng|lat/i.test(k))) : undefined
-    if (s.layer === 'scatter') out.push(gl.scatter({ id, data: points(), color: color ?? '#5CBDE8', radius: s.radius, opacity: s.opacity, additive: s.additive, filters, properties: props }))
-    else if (s.layer === 'heatmap') out.push(gl.heatmap({ id, data: points(), radius: s.heatRadius, opacity: s.opacity, filters }))
-    else if (s.layer === 'hexbin' || s.layer === 'grid') {
-      const weight = s.measure !== 'count' && cols ? cols[cb.column] : undefined
-      const make = s.layer === 'hexbin' ? gl.hexbin : gl.grid
-      out.push(make({ id, data: points(), cellSize: s.cellSize, weight, measure: weight ? s.measure : 'count', ramp: (cb.categorical ? 'smalt' : cb.ramp) as 'smalt', opacity: s.opacity, filters, scale: s.measure === 'count' ? 'log' : 'linear', extrude: s.extrude ? extrudeMetres() : 0 }))
-    } else if (s.layer === 'arcs' && cols?.dropLng) {
-      const n = Math.min(d.count, 300_000)
-      tooltipNote.value = d.count > n ? `Arcs: the first ${fmtN(n)} rides` : ''
-      const sl = (c: ArrayLike<number>) => (c as Float64Array).subarray(0, n)
-      out.push(
-        gl.arcs({
-          id,
-          data: { sourceLng: sl(cols.lng), sourceLat: sl(cols.lat), targetLng: sl(cols.dropLng), targetLat: sl(cols.dropLat) },
-          color: color ? { ...(color as object), values: sl(cols[cb.column]) } as never : '#0E7FAE',
-          width: s.width,
-          opacity: s.opacity * 0.6,
-          additive: s.additive,
-          animate: s.animate,
-          height: 0.3,
-          filters: filterValues ? [{ values: Float32Array.from(sl(filterValues)), range: [s.lo, s.hi] }] : [],
-        }),
-      )
-    }
-  } else if (d.kind === 'arcs') {
-    const c = d.columns
-    filterValues = s.filter ? c[s.filter] : undefined
-    const props = { distance: c.distance, seats: c.seats, hour: c.hour }
-    if (s.layer === 'arcs') {
-      out.push(gl.arcs({ id, data: c, color: colorSpec(c[cb.column], !!cb.categorical, cb.ramp) as never, width: s.width, opacity: s.opacity, additive: s.additive, greatCircle: s.greatCircle, animate: s.animate, filters: gpuFilter(filterValues), properties: props }))
-    } else if (s.layer === 'scatter' || s.layer === 'heatmap') {
-      const p = gl.projectColumns(c.targetLng, c.targetLat)
-      if (s.layer === 'heatmap') out.push(gl.heatmap({ id, data: p, radius: s.heatRadius, filters: gpuFilter(filterValues) }))
-      else out.push(gl.scatter({ id, data: p, radius: s.radius, color: colorSpec(c[cb.column], !!cb.categorical, cb.ramp) as never, additive: s.additive, opacity: s.opacity, filters: gpuFilter(filterValues), properties: props }))
-    }
-    if (d.places && s.layer === 'arcs') {
-      const pl = d.places
-      out.push(gl.scatter({ id: 'airports', data: { lng: pl.lng, lat: pl.lat }, color: '#FFFFFF', radius: 2, size: { values: pl.weight }, radiusMax: 9, opacity: 0.9, stroke: { color: '#0E7FAE', width: 1 }, properties: { airport: pl.names, flights: pl.weight } }))
-    }
-  } else if (d.kind === 'paths') {
-    const c = d.columns
-    const color = colorSpec(c[cb.column], !!cb.categorical, cb.ramp) ?? '#E5622F'
-    const pd = { starts: d.starts, lng: d.points.lng, lat: d.points.lat, times: d.points.times }
-    const props = c.vehicle ? { vehicle: Array.from(c.vehicle, (v) => ['Van', 'Cargo bike', 'Truck'][v]), stops: c.stops, km: Array.from(c.distance, (v) => Math.round(v * 10) / 10) } : (d as { properties?: Record<string, ArrayLike<unknown>> }).properties ?? c
-    if (s.layer === 'trips') {
-      const t = gl.trips({ id, data: pd, color: color as never, width: s.width + 0.8, opacity: s.opacity, additive: s.additive, trail: 1800, time: 9 * 3600, properties: props })
-      t.onTime = (time) => (clock.value = time)
-      out.push(t)
-      s.min = t.timeRange[0]
-      s.max = t.timeRange[1]
-      clock.value = 9 * 3600
-    } else out.push(gl.paths({ id, data: { starts: d.starts, lng: d.points.lng, lat: d.points.lat }, color: color as never, width: s.width, opacity: s.opacity * 0.7, additive: s.additive, properties: props }))
-  } else if (d.kind === 'polygons') {
-    const c = d.columns
-    filterValues = s.filter ? c[s.filter] : undefined
-    const rings = (d as PolygonsDataset & { rings?: Uint32Array }).rings
-    const props = c.density ? { population: c.population, density: Array.from(c.density, Math.round), income: c.income, commute: Array.from(c.commute, Math.round) } : (d as { properties?: Record<string, ArrayLike<unknown>> }).properties ?? c
-    const hv = c[cb.column]
-    const extrude = s.extrude && hv ? { values: hv, scale: polygonScale(hv) } : undefined
-    out.push(gl.polygons({ id, extrude, data: { starts: d.starts, lng: d.points.lng, lat: d.points.lat, rings }, color: (colorSpec(c[cb.column], !!cb.categorical, cb.ramp) ?? '#2F5BB7') as never, opacity: s.opacity, filters: gpuFilter(filterValues), properties: props }))
+  const opts = settings()
+  const built = buildLayers(gl, data, opts, points(), ds.value.view.center[1])
+  tooltipNote.value = built.note
+  if (built.trips) {
+    built.trips.onTime = (time) => (clock.value = time)
+    s.min = built.trips.timeRange[0]
+    s.max = built.trips.timeRange[1]
+    clock.value = 9 * 3600
   }
-  layers = out
-  map.setLayers(out)
+  layers = built.layers
+  map.setLayers(layers)
   await map.renderNow()
   stats.build = performance.now() - t0
-  updateLegend(cb)
+  updateLegend(opts.colour)
 }
 
-/** Column heights for the cells: about a tenth of the data's extent at the top, times the height slider. */
-function extrudeMetres(): number {
-  const p = points()
-  const span = Math.max(p.bounds[2] - p.bounds[0], p.bounds[3] - p.bounds[1]) * 40075016 * Math.cos((ds.value.view.center[1] * Math.PI) / 180)
-  return Math.max(200, span * 0.12) * s.height
-}
+/** Column heights for the cells, for an update without a rebuild. */
+const cellHeights = () => extrudeMetres(points(), ds.value.view.center[1], s.height)
 
-/** Polygon heights: the largest value stands about as tall as a tenth of the area's width. */
-function polygonScale(values: ArrayLike<number>): number {
-  let mx = 0
-  for (let i = 0; i < values.length; i++) if (values[i] > mx) mx = values[i]
-  const p = points()
-  const span = Math.max(p.bounds[2] - p.bounds[0], p.bounds[3] - p.bounds[1]) * 40075016 * Math.cos((ds.value.view.center[1] * Math.PI) / 180)
-  return ((span * 0.1) / Math.max(1e-9, mx)) * s.height
-}
-
-function updateLegend(cb: { column: string; ramp: string; categorical?: boolean }): void {
-  const l = layers.find((x) => x.id === 'data') as (Layer & { legend?: { stops: readonly string[]; domain: readonly [number, number]; categorical: boolean }; rampStops?: readonly string[] }) | undefined
-  if (!l) return (legend.value = null)
+function updateLegend(cb: { column: string }): void {
+  const main = layers.find((x) => x.id === 'data')
   const d = data
-  const cats = d && 'categories' in d ? d.categories?.[cb.column] : undefined
-  if (l.rampStops) {
-    const agg = l as unknown as AggregateLayer
-    legend.value = { stops: [...l.rampStops], domain: [0, agg.max ?? 1] }
-    if ('max' in agg) setTimeout(() => (legend.value = { stops: [...l.rampStops!], domain: [0, agg.max] }), 300)
-  } else if (l.legend) {
-    if (l.legend.categorical) legend.value = { stops: [...gl.CATEGORICAL], domain: [0, 0], categories: cats ? [...cats] : undefined }
-    else legend.value = { stops: [...l.legend.stops], domain: [l.legend.domain[0], l.legend.domain[1]] }
-  } else legend.value = null
+  const cats = d && 'categories' in d ? (d.categories as Record<string, readonly string[]> | undefined)?.[cb.column] : undefined
+  legend.value = legendFor(gl, main, cats)
+  // Bins read their largest value back from the GPU a moment later.
+  if (main && 'rampStops' in main) setTimeout(() => (legend.value = legendFor(gl, main, cats)), 300)
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -505,7 +430,7 @@ watch(() => s.extrude, (on) => {
 })
 watch(() => s.height, () => {
   const l = layers.find((x) => x.id === 'data') as unknown as { update?: (c: Record<string, unknown>) => void } | undefined
-  if (s.layer === 'hexbin' || s.layer === 'grid') l?.update?.({ extrude: s.extrude ? extrudeMetres() : 0 })
+  if (s.layer === 'hexbin' || s.layer === 'grid') l?.update?.({ extrude: s.extrude ? cellHeights() : 0 })
   else if (s.layer === 'polygons' && s.extrude) void build()
 })
 // A new filter column starts at its full range (in sync, before the rebuild below reads it).
@@ -682,44 +607,18 @@ async function openFile(file: File | undefined): Promise<void> {
     if (/\.(geo)?json$/i.test(file.name)) {
       busy.value = `Reading ${file.name}…`
       const t0 = performance.now()
-      const g = gl.readGeoJSON(await file.text())
+      const f = datasetFromGeoJSON(gl, await file.text())
       stats.load = undefined
       stats.query = undefined
       fileKind.value = 'geojson'
-      // The geometry most of the file is.
-      const kind = g.polygons.count >= Math.max(g.lines.count, g.points.count) ? 'polygons' : g.lines.count >= g.points.count ? 'lines' : 'points'
-      const part = g[kind]
-      const columns: Record<string, Float32Array> = {}
-      const colorBy: DemoDataset['colorBy'][number][] = []
-      for (const [k, v] of Object.entries(part.columns))
-        if (v instanceof Float64Array) {
-          columns[k] = Float32Array.from(v)
-          colorBy.push({ column: k, ramp: 'glow' })
-        }
-      for (const [k, c] of Object.entries(part.categories))
-        if (c.names.length <= 64) {
-          columns[k] = c.codes
-          colorBy.push({ column: k, ramp: 'categorical', categorical: true })
-        }
-      const properties = part.columns
-      if (kind === 'polygons') {
-        const p = g.polygons
-        data = { kind: 'polygons', count: p.count, starts: p.starts, rings: p.rings, points: { lng: p.lng, lat: p.lat }, columns, properties } as never
-      } else if (kind === 'lines') {
-        const l = g.lines
-        data = { kind: 'paths', count: l.count, starts: l.starts, points: { lng: l.lng, lat: l.lat, times: new Float64Array(l.lng.length) }, columns, properties } as never
-      } else data = { kind: 'points', count: g.points.count, columns: { lng: g.points.lng, lat: g.points.lat, ...columns } } as never
-      fileMeta.value = {
-        layers: kind === 'polygons' ? ['polygons'] : kind === 'lines' ? ['paths'] : ['scatter', 'heatmap', 'hexbin', 'grid'],
-        colorBy: colorBy.length ? colorBy : [{ column: '', ramp: 'glow' }],
-        filters: colorBy.filter((c) => !c.categorical).map((c) => ({ column: c.column, label: c.column })),
-      }
+      data = f.data
+      fileMeta.value = f.meta
       s.layer = fileMeta.value.layers[0]
-      s.colorBy = colorBy[0]?.column ?? ''
+      s.colorBy = f.meta.colorBy[0]?.column ?? ''
       s.filter = ''
       projected = undefined
       stats.generate = performance.now() - t0
-      stats.rows = part.count
+      stats.rows = f.count
       await build()
       map.fitBounds()
     } else {

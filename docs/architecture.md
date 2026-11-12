@@ -15,14 +15,16 @@ tile workers: fetch ─▶ decode MVT ─▶ style groups ─▶ fans, segments,
 
 ## Pieces
 
-| Folder | What it does |
-| --- | --- |
-| `src/core/` | Web Mercator in world units, the camera, colours and ramps (OKLab), WebGPU setup, the uniform arena |
-| `src/map/` | The map: canvas, render loop, input, picking, frame statistics, tooltips |
-| `src/layers/` | One file per layer; `common.ts` has colour, filters and bind group helpers |
-| `src/basemap/` | Protobuf and MVT decoding, style groups and themes, tile cover, the tile worker, labels, the renderer |
-| `src/data/` | Adapters for smaltdb (SQL, columnar results) and smaltcy (Cypher results to points and arcs) |
-| `src/datasets/` | Generators and their worker |
+| Folder | What it does | May import |
+| --- | --- | --- |
+| `src/core/` | The contracts between pieces (`contract.ts`), Web Mercator, the camera, colours and ramps (OKLab), WebGPU setup, the uniform arena | nothing else |
+| `src/map/` | `renderer.ts` (device, frames, layers, basemap, picking, timing), `input.ts`, `overlays.ts` (tooltip, attribution), `map.ts` (them together) | core |
+| `src/layers/` | One file per layer; `layer.ts`, `common.ts` and `triangulate.ts` shared; `kit.ts` for layers of your own | core |
+| `src/basemap/` | `tile-source.ts` (workers, cache, plan; no GPU), `tile-renderer.ts`, `label-renderer.ts` and `labels.ts`, `mvt.ts` and `build.ts` (decoding), `style.ts`, `basemap.ts` (them together) | core |
+| `src/data/` | `smaltdb.ts`, `smaltcy.ts`, `geojson.ts`, `columns.ts` | nothing |
+| `src/datasets/` | One file per generator, `random.ts`, `types.ts`, the registry and its worker | nothing |
+
+The rules are tested: see [Using the pieces](./guide/modules).
 
 ## Decisions that shape it
 

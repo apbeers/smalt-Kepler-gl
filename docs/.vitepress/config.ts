@@ -75,6 +75,7 @@ export default defineConfig({
         text: 'Internals',
         items: [
           { text: 'Architecture', link: '/architecture' },
+          { text: 'Using the pieces', link: '/guide/modules' },
           { text: 'Performance', link: '/guide/performance' },
           { text: 'Decisions', link: '/adr/' },
         ],
@@ -93,6 +94,8 @@ export default defineConfig({
           { text: 'Sample data', link: '/guide/sample-data' },
           { text: 'The basemap', link: '/guide/basemap' },
           { text: 'Performance', link: '/guide/performance' },
+          { text: 'Using the pieces', link: '/guide/modules' },
+          { text: 'Writing a layer', link: '/guide/custom-layers' },
           { text: 'Tech demo', link: '/demo' },
         ],
       },

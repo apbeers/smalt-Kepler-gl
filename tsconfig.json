@@ -81,6 +81,6 @@
   "include": [
     "src",
     "test",
-    "docs/.vitepress/theme/*.ts"
+    "docs/.vitepress/theme/**/*.ts"
   ]
 }

@@ -36,9 +36,19 @@ Playwright is installed globally in the cloud containers; don't run `playwright 
 
 ## Layers and rules
 
-- `src/core/` imports nothing else; layers import core; the basemap imports core and the layer types; `src/data/`
-  imports nothing (smaltdb and smaltcy are passed in, used through their public methods). No runtime dependencies:
-  ask the owner before adding any package, as the family's rules say.
+- **Modular (owner, 2026-11-12):** every piece is meant to be reused, changed or worked on alone. Each is an entry
+  point in `scripts/entries.mjs` (the build, vitest and the docs site read it; package.json exports and tsconfig paths
+  follow it). `test/modules.test.ts` holds the import rules and bundles every entry alone to check what comes along:
+  core imports nothing else; map, layers and basemap import only core (they meet in `core/contract.ts`); no layer
+  imports another; the tile source and vector-tile code use no GPU; data and datasets stand alone. A new dependency
+  between pieces changes that test on purpose, never by accident.
+- A new entry point goes in `scripts/entries.mjs`, package.json `exports`, tsconfig `paths`, and the table in
+  `docs/guide/modules.md` (the modules test checks all four) and the README. The ```` ```ts ```` examples in the
+  guides to the pieces are type-checked (`test/docs-ts.test.ts`).
+- The tech demo's logic is plain TypeScript in `docs/.vitepress/theme/demo/` (layers for a dataset and settings,
+  files, links), tested in `test/demo.test.ts`; `TechDemo.vue` is the page around it.
+- smaltdb and smaltcy are passed in and used through their public methods: smaltgl imports neither. No runtime
+  dependencies: ask the owner before adding any package, as the family's rules say.
 - A layer uploads its data once in `attach`; anything that changes per frame (view, filters, time, looks) is a uniform
   written into the frame's arena slot. Keep it that way: no per-frame uploads proportional to the data.
 - Every pipeline in the map's pass declares `NO_STENCIL` (or the basemap's stencil states) and the map's sample count.
