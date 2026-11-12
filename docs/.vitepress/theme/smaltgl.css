@@ -1,0 +1,41 @@
+/* smaltgl's additions to the family theme. */
+.gl-wordmark {
+  font-family: var(--font-brand, 'Martian Mono', monospace);
+  font-weight: 600;
+  font-stretch: 112.5%;
+  letter-spacing: -0.06em;
+  font-size: 22px;
+  color: var(--vp-c-text-1);
+  margin-right: 12px;
+}
+.gl-wordmark .alt { color: var(--vp-c-brand-1); }
+.gl-wordmark-hero { font-size: clamp(48px, 9vw, 88px); display: inline-block; line-height: 1.1; }
+
+/* Runnable examples (runnable.ts). */
+.gl-run { margin: 16px 0; border: 1px solid var(--vp-c-divider); border-radius: 10px; overflow: hidden; }
+.gl-run .gl-run-code div[class*='language-'] { margin: 0 !important; border-radius: 0; }
+.gl-run-editor {
+  display: block; width: 100%; padding: 16px 24px; border: 0; resize: vertical;
+  background: var(--vp-code-block-bg); color: var(--vp-c-text-1);
+  font-family: var(--vp-font-family-mono); font-size: var(--vp-code-font-size); line-height: var(--vp-code-line-height);
+}
+.gl-run-editor:focus-visible { outline: 2px solid var(--vp-c-brand-1); outline-offset: -2px; }
+.gl-run-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 12px;
+  border-top: 1px solid var(--vp-c-divider); background: var(--vp-c-bg); font-size: 14px;
+}
+.gl-run-bar button {
+  padding: 3px 10px; border: 1px solid var(--vp-c-divider); border-radius: 6px; font-weight: 500;
+  color: var(--vp-c-text-1); background: transparent; cursor: pointer;
+}
+.gl-run-bar button:hover { border-color: var(--vp-c-brand-1); }
+.gl-run-bar .gl-run-go { background: var(--vp-c-brand-1); border-color: var(--vp-c-brand-1); color: var(--vp-c-white); }
+.gl-run-bar .gl-run-go:hover { background: var(--vp-c-brand-2); }
+.gl-run-status { margin-left: auto; color: var(--vp-c-text-2); font-size: 13px; font-family: var(--vp-font-family-mono); }
+.gl-run[aria-busy='true'] .gl-run-status::before { content: '● '; color: var(--vp-c-brand-1); }
+.gl-run-map { position: relative; border-top: 1px solid var(--vp-c-divider); background: var(--vp-c-bg-alt); }
+.gl-run-note { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; margin: 0; padding: 16px; color: var(--vp-c-text-2); }
+
+/* The home page's map. */
+.gl-home-mark { display: flex; justify-content: center; margin: -24px 0 24px; }
+.VPHome .VPHero .name { display: none; }

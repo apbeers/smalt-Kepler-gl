@@ -1,0 +1,12 @@
+import { serve, open, check, failed, decodePng, countPixels, root } from './harness.mjs';
+import { join } from 'node:path';
+const s = await serve(join(root, 'test/browser/pages/smoke.ts'));
+const { browser, page, errors } = await open(s.url);
+await page.waitForFunction(() => window.done === true, null, { timeout: 30000 });
+const img = await decodePng(await page.screenshot());
+const red = countPixels(img, ([r, g, b]) => r > 200 && g < 80 && b < 80);
+check(red > 500, `scatter draws red points (${red})`);
+check(errors.length === 0, `no errors ${errors.join('\n')}`);
+await browser.close();
+await s.close();
+process.exit(failed() ? 1 : 0);

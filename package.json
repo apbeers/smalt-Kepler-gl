@@ -1,0 +1,89 @@
+{
+  "name": "@smaltworks/smaltgl",
+  "version": "0.1.0",
+  "description": "Maps for smaltdb, in the browser: location data drawn on the GPU with WebGPU.",
+  "keywords": [
+    "map",
+    "geospatial",
+    "webgpu",
+    "gpu",
+    "visualization",
+    "vector-tiles",
+    "openstreetmap",
+    "smaltdb",
+    "browser"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/apbeers/smalt-Kepler-gl.git"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test",
+    "build": "node scripts/build.mjs",
+    "test:browser": "node test/browser/run.mjs",
+    "test:browser:quick": "node test/browser/run.mjs --quick",
+    "bench": "node test/browser/bench.mjs",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "test:quick": "npm run check && npm run test:browser:quick"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/smaltgl.js"
+    },
+    "./core": {
+      "types": "./dist/types/core/index.d.ts",
+      "default": "./dist/core.js"
+    },
+    "./basemap": {
+      "types": "./dist/types/basemap/index.d.ts",
+      "default": "./dist/basemap.js"
+    },
+    "./layers": {
+      "types": "./dist/types/layers/index.d.ts",
+      "default": "./dist/layers.js"
+    },
+    "./data": {
+      "types": "./dist/types/data/index.d.ts",
+      "default": "./dist/data.js"
+    },
+    "./datasets": {
+      "types": "./dist/types/datasets/index.d.ts",
+      "default": "./dist/datasets.js"
+    },
+    "./tile-worker": "./dist/smaltgl-tile-worker.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "smaltdb": "^0.8.3"
+  },
+  "peerDependenciesMeta": {
+    "smaltdb": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@smaltworks/smaltcy": "github:apbeers/smalt-graph-db#f0a84e3b32713234766a4b3680921174b603f21f",
+    "@types/node": "^22.20.5",
+    "esbuild": "^0.28.2",
+    "smaltdb": "^0.8.3",
+    "typescript": "7.0",
+    "vitepress": "1.6.4",
+    "vitest": "^5.1.0"
+  }
+}

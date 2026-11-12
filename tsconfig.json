@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker.ImportScripts"],
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "paths": {
+      "@smaltworks/smaltgl": ["./src/index.ts"],
+      "@smaltworks/smaltgl/core": ["./src/core/index.ts"],
+      "@smaltworks/smaltgl/basemap": ["./src/basemap/index.ts"],
+      "@smaltworks/smaltgl/layers": ["./src/layers/index.ts"],
+      "@smaltworks/smaltgl/data": ["./src/data/index.ts"],
+      "@smaltworks/smaltgl/datasets": ["./src/datasets/index.ts"],
+      "@smaltworks/smaltcy": ["./node_modules/@smaltworks/smaltcy/src/index.ts"]
+    }
+  },
+  "include": ["src", "test", "docs/.vitepress/theme/*.ts"]
+}

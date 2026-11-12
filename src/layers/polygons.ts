@@ -1,0 +1,298 @@
+/**
+ * Polygons coloured by value (choropleths): districts, zones, catchments. Rings are triangulated once on the CPU
+ * (triangulate.ts), then each frame is one indexed draw for the fills and one instanced draw for the outlines.
+ */
+import { BLEND_OVER, bufferFrom, NO_STENCIL, VIEW_WGSL } from '../core/gpu.js';
+import { parseColor } from '../core/color.js';
+import { projectColumns, type Bounds } from '../core/mercator.js';
+import { describeRow, emptyStorage, makeRamp, PICK_TARGET, premul, resolveColor, storageEntry, storageOf, type Ramp, type ResolvedColor } from './common.js';
+import { autoId, originOffset, RAMP_WGSL, type ColorSpec, type Frame, type GpuFilter, type Layer, type LayerGpu } from './layer.js';
+import { triangulate } from './triangulate.js';
+
+export interface PolygonData {
+  /** Where each polygon's ring starts in the point columns, plus the end: polygons + 1 offsets. */
+  readonly starts: ArrayLike<number>;
+  readonly lng: ArrayLike<number>;
+  readonly lat: ArrayLike<number>;
+}
+
+export interface PolygonOptions {
+  readonly id?: string;
+  readonly data: PolygonData;
+  /** A CSS colour, or a column with a value per polygon through a ramp. */
+  readonly color?: ColorSpec;
+  readonly opacity?: number;
+  /** Outline colour and width in pixels (default: thin, in the map's halo colour). Width 0 for none. */
+  readonly stroke?: { readonly color?: string; readonly width?: number };
+  /** A filter with a value per polygon. */
+  readonly filters?: readonly GpuFilter[];
+  readonly properties?: Readonly<Record<string, ArrayLike<unknown>>>;
+  readonly visible?: boolean;
+}
+
+const WGSL = /* wgsl */ `
+${VIEW_WGSL}
+struct U {
+  offset: vec2f, opacity: f32, strokeWidth: f32,
+  color: vec4f,
+  stroke: vec4f,
+  hasColor: f32, slot: f32, highlight: f32, hasFilter: f32,
+  range: vec2f, pad: vec2f,
+};
+@group(1) @binding(0) var<uniform> u: U;
+${RAMP_WGSL}
+@group(1) @binding(3) var<storage, read> colorT: array<f32>;
+@group(1) @binding(4) var<storage, read> filterA: array<f32>;
+fn hidden(poly: u32) -> bool {
+  if (u.hasFilter > 0.5) { let v = filterA[poly]; return !(v >= u.range.x && v <= u.range.y); }
+  return false;
+}
+struct F { @builtin(position) p: vec4f, @location(0) @interpolate(flat) color: vec4f, @location(1) @interpolate(flat) id: u32 };
+@vertex fn vsFill(@location(0) p: vec2f, @location(1) poly: u32) -> F {
+  var o: F;
+  if (hidden(poly)) { o.p = vec4f(2.0, 2.0, 2.0, 1.0); return o; }
+  o.p = pixelsToClip(toPixels(p + u.offset));
+  var c = u.color;
+  if (u.hasColor > 0.5) { c = ramp(colorT[poly]); }
+  if (f32(poly) == u.highlight) { c = vec4f(mix(c.rgb, vec3f(1.0), 0.3), c.a); }
+  o.color = vec4f(c.rgb * c.a, c.a) * u.opacity;
+  o.id = poly;
+  return o;
+}
+@fragment fn fsFill(v: F) -> @location(0) vec4f { return v.color; }
+@fragment fn fsPick(v: F) -> @location(0) u32 { return (u32(u.slot) << 24u) | (v.id + 1u); }
+
+struct L { @builtin(position) p: vec4f, @location(0) side: f32 };
+const C = array<vec2f, 6>(vec2f(0, -1), vec2f(1, -1), vec2f(0, 1), vec2f(0, 1), vec2f(1, -1), vec2f(1, 1));
+@vertex fn vsLine(@builtin(vertex_index) vi: u32, @location(0) seg: vec4f, @location(1) poly: u32) -> L {
+  var o: L;
+  if (hidden(poly) || u.strokeWidth <= 0.0) { o.p = vec4f(2.0, 2.0, 2.0, 1.0); return o; }
+  let a = toPixels(seg.xy + u.offset);
+  let b = toPixels(seg.zw + u.offset);
+  let d = b - a;
+  let len = length(d);
+  var dir = vec2f(1.0, 0.0);
+  if (len > 1e-6) { dir = d / len; }
+  let n = vec2f(-dir.y, dir.x);
+  let hw = u.strokeWidth * 0.5 + 1.0;
+  let c = C[vi];
+  o.p = pixelsToClip(mix(a - dir * hw * 0.5, b + dir * hw * 0.5, c.x) + n * c.y * hw);
+  o.side = c.y * hw;
+  return o;
+}
+@fragment fn fsLine(v: L) -> @location(0) vec4f {
+  let a = clamp(max(u.strokeWidth, 1.0) * 0.5 - abs(v.side) + 0.5, 0.0, 1.0) * min(u.strokeWidth, 1.0);
+  return u.stroke * a;
+}
+`;
+
+export class PolygonLayer implements Layer {
+  readonly id: string;
+  visible: boolean;
+  readonly count: number;
+  readonly bounds: Bounds;
+  readonly origin: readonly [number, number];
+  filters: GpuFilter[];
+  private opts: PolygonOptions;
+  private col: ResolvedColor;
+  private verts: Float32Array;
+  private vertPoly: Uint32Array;
+  private index: Uint32Array;
+  private segs: Float32Array;
+  private segPoly: Uint32Array;
+  private gpu?: LayerGpu;
+  private fillPipe?: GPURenderPipeline;
+  private linePipe?: GPURenderPipeline;
+  private pickPipe?: GPURenderPipeline;
+  private layout?: GPUBindGroupLayout;
+  private group?: GPUBindGroup;
+  private groupVersion = -1;
+  private gpuBuffers: GPUBuffer[] = [];
+  private ramp?: Ramp;
+  private highlighted = -1;
+  private redraw: () => void = () => {};
+
+  constructor(options: PolygonOptions) {
+    this.opts = options;
+    this.id = options.id ?? autoId('polygons');
+    this.visible = options.visible ?? true;
+    const d = options.data;
+    const p = projectColumns(d.lng, d.lat);
+    this.origin = p.origin;
+    this.bounds = p.bounds;
+    this.verts = p.positions;
+    const n = d.starts.length - 1;
+    this.count = Math.max(0, n);
+    this.vertPoly = new Uint32Array(p.count);
+    const idx: number[] = [];
+    const segs: number[] = [];
+    const segPoly: number[] = [];
+    for (let k = 0; k < n; k++) {
+      const s = d.starts[k], e = d.starts[k + 1];
+      for (let i = s; i < e; i++) this.vertPoly[i] = k;
+      for (const t of triangulate(p.positions, s, e - s)) idx.push(s + t);
+      for (let i = s; i < e; i++) {
+        const j = i + 1 < e ? i + 1 : s;
+        segs.push(p.positions[2 * i], p.positions[2 * i + 1], p.positions[2 * j], p.positions[2 * j + 1]);
+        segPoly.push(k);
+      }
+    }
+    this.index = Uint32Array.from(idx);
+    this.segs = Float32Array.from(segs);
+    this.segPoly = Uint32Array.from(segPoly);
+    this.col = resolveColor(options.color, '#2F5BB7');
+    this.filters = [...(options.filters ?? [])];
+  }
+
+  get legend(): ResolvedColor {
+    return this.col;
+  }
+
+  update(changes: Partial<Pick<PolygonOptions, 'opacity' | 'stroke'>>): void {
+    this.opts = { ...this.opts, ...changes };
+    this.redraw();
+  }
+
+  setFilter(index: number, range: [number, number]): void {
+    const f = this.filters[index];
+    if (f) f.range = range;
+    this.redraw();
+  }
+
+  attach(gpu: LayerGpu, redraw: () => void): void {
+    this.gpu = gpu;
+    this.redraw = redraw;
+    const { device } = gpu;
+    const V = GPUShaderStage.VERTEX, F = GPUShaderStage.FRAGMENT;
+    this.layout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: V | F, buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: 256 } },
+        { binding: 1, visibility: V | F, texture: { sampleType: 'float' } },
+        { binding: 2, visibility: V | F, sampler: { type: 'filtering' } },
+        storageEntry(3, V),
+        storageEntry(4, V),
+      ],
+    });
+    const module = device.createShaderModule({ label: 'polygons', code: WGSL });
+    const pl = device.createPipelineLayout({ bindGroupLayouts: [gpu.viewLayout, this.layout] });
+    const fillBuffers: GPUVertexBufferLayout[] = [
+      { arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] },
+      { arrayStride: 4, attributes: [{ shaderLocation: 1, offset: 0, format: 'uint32' }] },
+    ];
+    this.fillPipe = device.createRenderPipeline({
+      label: 'polygon fill',
+      layout: pl,
+      vertex: { module, entryPoint: 'vsFill', buffers: fillBuffers },
+      fragment: { module, entryPoint: 'fsFill', targets: [{ format: gpu.format, blend: BLEND_OVER }] },
+      depthStencil: NO_STENCIL,
+      multisample: { count: gpu.samples },
+    });
+    this.pickPipe = device.createRenderPipeline({
+      label: 'polygon pick',
+      layout: pl,
+      vertex: { module, entryPoint: 'vsFill', buffers: fillBuffers },
+      fragment: { module, entryPoint: 'fsPick', targets: [PICK_TARGET] },
+    });
+    this.linePipe = device.createRenderPipeline({
+      label: 'polygon outline',
+      layout: pl,
+      vertex: {
+        module,
+        entryPoint: 'vsLine',
+        buffers: [
+          { arrayStride: 16, stepMode: 'instance', attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x4' }] },
+          { arrayStride: 4, stepMode: 'instance', attributes: [{ shaderLocation: 1, offset: 0, format: 'uint32' }] },
+        ],
+      },
+      fragment: { module, entryPoint: 'fsLine', targets: [{ format: gpu.format, blend: BLEND_OVER }] },
+      depthStencil: NO_STENCIL,
+      multisample: { count: gpu.samples },
+    });
+    const empty = emptyStorage(device);
+    const VB = GPUBufferUsage.VERTEX;
+    this.gpuBuffers = [
+      bufferFrom(device, this.verts, VB, 'polygon vertices'),
+      bufferFrom(device, this.vertPoly, VB, 'polygon vertex ids'),
+      bufferFrom(device, this.index, GPUBufferUsage.INDEX, 'polygon indices'),
+      bufferFrom(device, this.segs, VB, 'polygon outline'),
+      bufferFrom(device, this.segPoly, VB, 'polygon outline ids'),
+      storageOf(device, this.col.t, empty, 'polygon colour'),
+      storageOf(device, this.filters[0]?.values, empty, 'polygon filter'),
+      empty,
+    ];
+    this.ramp = makeRamp(device, this.col.table);
+  }
+
+  private bind(): GPUBindGroup {
+    const gpu = this.gpu!;
+    if (!this.group || this.groupVersion !== gpu.arena.version) {
+      this.group = gpu.device.createBindGroup({
+        layout: this.layout!,
+        entries: [
+          { binding: 0, resource: { buffer: gpu.arena.buffer, size: 256 } },
+          { binding: 1, resource: this.ramp!.texture.createView() },
+          { binding: 2, resource: this.ramp!.sampler },
+          { binding: 3, resource: { buffer: this.gpuBuffers[5] } },
+          { binding: 4, resource: { buffer: this.gpuBuffers[6] } },
+        ],
+      });
+      this.groupVersion = gpu.arena.version;
+    }
+    return this.group;
+  }
+
+  private uniforms(frame: Frame, slot: number): number[] {
+    const o = this.opts;
+    const [ox, oy] = originOffset(this.origin, frame.camera);
+    const stroke = parseColor(o.stroke?.color ?? (frame.dark ? '#14171F' : '#FFFFFF'));
+    const f = this.filters[0];
+    return [
+      ox, oy, o.opacity ?? 0.75, o.stroke?.width ?? 0.8,
+      ...premul(this.col.color),
+      ...premul(stroke),
+      this.col.mode, slot, this.highlighted, f ? 1 : 0,
+      f?.range[0] ?? 0, f?.range[1] ?? 0, 0, 0,
+    ];
+  }
+
+  private fill(pass: GPURenderPassEncoder, frame: Frame, pipe: GPURenderPipeline, slot: number): void {
+    const off = this.gpu!.arena.push(this.uniforms(frame, slot));
+    pass.setPipeline(pipe);
+    pass.setBindGroup(0, frame.viewGroup);
+    pass.setBindGroup(1, this.bind(), [off]);
+    pass.setVertexBuffer(0, this.gpuBuffers[0]);
+    pass.setVertexBuffer(1, this.gpuBuffers[1]);
+    pass.setIndexBuffer(this.gpuBuffers[2], 'uint32');
+    pass.drawIndexed(this.index.length);
+    if (pipe === this.fillPipe && this.segPoly.length) {
+      pass.setPipeline(this.linePipe!);
+      pass.setVertexBuffer(0, this.gpuBuffers[3]);
+      pass.setVertexBuffer(1, this.gpuBuffers[4]);
+      pass.draw(6, this.segPoly.length);
+    }
+  }
+
+  draw(pass: GPURenderPassEncoder, frame: Frame): void {
+    if (this.visible && this.index.length) this.fill(pass, frame, this.fillPipe!, 0);
+  }
+
+  pick(pass: GPURenderPassEncoder, frame: Frame, slot: number): void {
+    if (this.visible && this.index.length) this.fill(pass, frame, this.pickPipe!, slot);
+  }
+
+  describe(index: number): Record<string, unknown> {
+    return describeRow(this.opts.properties, index);
+  }
+
+  highlight(index: number): void {
+    this.highlighted = index;
+  }
+
+  destroy(): void {
+    for (const b of new Set(this.gpuBuffers)) b.destroy();
+    this.ramp?.texture.destroy();
+  }
+}
+
+/** Polygons coloured by value. */
+export const polygons = (options: PolygonOptions): PolygonLayer => new PolygonLayer(options);
