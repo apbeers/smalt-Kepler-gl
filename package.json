@@ -44,23 +44,72 @@
       "types": "./dist/types/core/index.d.ts",
       "default": "./dist/core.js"
     },
-    "./basemap": {
-      "types": "./dist/types/basemap/index.d.ts",
-      "default": "./dist/basemap.js"
+    "./map": {
+      "types": "./dist/types/map/index.d.ts",
+      "default": "./dist/map.js"
     },
     "./layers": {
       "types": "./dist/types/layers/index.d.ts",
       "default": "./dist/layers.js"
     },
+    "./layer-kit": {
+      "types": "./dist/types/layers/kit.d.ts",
+      "default": "./dist/layer-kit.js"
+    },
+    "./scatter": {
+      "types": "./dist/types/layers/scatter.d.ts",
+      "default": "./dist/scatter.js"
+    },
+    "./heatmap": {
+      "types": "./dist/types/layers/heatmap.d.ts",
+      "default": "./dist/heatmap.js"
+    },
+    "./aggregate": {
+      "types": "./dist/types/layers/aggregate.d.ts",
+      "default": "./dist/aggregate.js"
+    },
+    "./arcs": {
+      "types": "./dist/types/layers/arcs.d.ts",
+      "default": "./dist/arcs.js"
+    },
+    "./paths": {
+      "types": "./dist/types/layers/paths.d.ts",
+      "default": "./dist/paths.js"
+    },
+    "./polygons": {
+      "types": "./dist/types/layers/polygons.d.ts",
+      "default": "./dist/polygons.js"
+    },
+    "./basemap": {
+      "types": "./dist/types/basemap/index.d.ts",
+      "default": "./dist/basemap.js"
+    },
+    "./vector-tiles": {
+      "types": "./dist/types/basemap/vector-tiles.d.ts",
+      "default": "./dist/vector-tiles.js"
+    },
     "./data": {
       "types": "./dist/types/data/index.d.ts",
       "default": "./dist/data.js"
+    },
+    "./geojson": {
+      "types": "./dist/types/data/geojson.d.ts",
+      "default": "./dist/geojson.js"
+    },
+    "./smaltdb": {
+      "types": "./dist/types/data/smaltdb.d.ts",
+      "default": "./dist/smaltdb.js"
+    },
+    "./smaltcy": {
+      "types": "./dist/types/data/smaltcy.d.ts",
+      "default": "./dist/smaltcy.js"
     },
     "./datasets": {
       "types": "./dist/types/datasets/index.d.ts",
       "default": "./dist/datasets.js"
     },
     "./tile-worker": "./dist/smaltgl-tile-worker.js",
+    "./data-worker": "./dist/smaltgl-data-worker.js",
     "./package.json": "./package.json"
   },
   "files": [

@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { smaltLight, smaltDark } from './theme/shiki'
 import { smaltworksMenu, smaltworksFooter } from './theme/smaltworks'
 import { runnablePlugin } from './theme/runnable-plugin'
+// @ts-expect-error: a plain JavaScript module, shared with the build.
+import { ENTRIES, specifier } from '../../scripts/entries.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const REPO = 'https://github.com/apbeers/smalt-Kepler-gl'
@@ -26,8 +28,11 @@ export default defineConfig({
   vite: {
     resolve: {
       alias: [
-        { find: /^@smaltworks\/smaltgl$/, replacement: path.resolve(here, '../../src/index.ts') },
-        { find: /^@smaltworks\/smaltgl\/(.*)$/, replacement: path.resolve(here, '../../src/$1/index.ts') },
+        // Every entry point, to its source (scripts/entries.mjs).
+        ...Object.entries(ENTRIES as Record<string, string>).map(([name, file]) => ({
+          find: new RegExp(`^${specifier(name).replace(/[/.]/g, '\\$&')}$`),
+          replacement: path.resolve(here, '../..', file),
+        })),
         // smaltcy is pinned to a commit of its repository, which ships its TypeScript source.
         { find: /^@smaltworks\/smaltcy$/, replacement: path.resolve(here, '../../node_modules/@smaltworks/smaltcy/src/index.ts') },
       ],

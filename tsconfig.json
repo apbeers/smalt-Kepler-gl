@@ -3,23 +3,84 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker.ImportScripts"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable",
+      "WebWorker.ImportScripts"
+    ],
     "strict": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "paths": {
-      "@smaltworks/smaltgl": ["./src/index.ts"],
-      "@smaltworks/smaltgl/core": ["./src/core/index.ts"],
-      "@smaltworks/smaltgl/basemap": ["./src/basemap/index.ts"],
-      "@smaltworks/smaltgl/layers": ["./src/layers/index.ts"],
-      "@smaltworks/smaltgl/data": ["./src/data/index.ts"],
-      "@smaltworks/smaltgl/datasets": ["./src/datasets/index.ts"],
-      "@smaltworks/smaltcy": ["./node_modules/@smaltworks/smaltcy/src/index.ts"]
+      "@smaltworks/smaltgl": [
+        "./src/index.ts"
+      ],
+      "@smaltworks/smaltgl/core": [
+        "./src/core/index.ts"
+      ],
+      "@smaltworks/smaltgl/map": [
+        "./src/map/index.ts"
+      ],
+      "@smaltworks/smaltgl/layers": [
+        "./src/layers/index.ts"
+      ],
+      "@smaltworks/smaltgl/layer-kit": [
+        "./src/layers/kit.ts"
+      ],
+      "@smaltworks/smaltgl/scatter": [
+        "./src/layers/scatter.ts"
+      ],
+      "@smaltworks/smaltgl/heatmap": [
+        "./src/layers/heatmap.ts"
+      ],
+      "@smaltworks/smaltgl/aggregate": [
+        "./src/layers/aggregate.ts"
+      ],
+      "@smaltworks/smaltgl/arcs": [
+        "./src/layers/arcs.ts"
+      ],
+      "@smaltworks/smaltgl/paths": [
+        "./src/layers/paths.ts"
+      ],
+      "@smaltworks/smaltgl/polygons": [
+        "./src/layers/polygons.ts"
+      ],
+      "@smaltworks/smaltgl/basemap": [
+        "./src/basemap/index.ts"
+      ],
+      "@smaltworks/smaltgl/vector-tiles": [
+        "./src/basemap/vector-tiles.ts"
+      ],
+      "@smaltworks/smaltgl/data": [
+        "./src/data/index.ts"
+      ],
+      "@smaltworks/smaltgl/geojson": [
+        "./src/data/geojson.ts"
+      ],
+      "@smaltworks/smaltgl/smaltdb": [
+        "./src/data/smaltdb.ts"
+      ],
+      "@smaltworks/smaltgl/smaltcy": [
+        "./src/data/smaltcy.ts"
+      ],
+      "@smaltworks/smaltgl/datasets": [
+        "./src/datasets/index.ts"
+      ],
+      "@smaltworks/smaltcy": [
+        "./node_modules/@smaltworks/smaltcy/src/index.ts"
+      ]
     }
   },
-  "include": ["src", "test", "docs/.vitepress/theme/*.ts"]
+  "include": [
+    "src",
+    "test",
+    "docs/.vitepress/theme/*.ts"
+  ]
 }

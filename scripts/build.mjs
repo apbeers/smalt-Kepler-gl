@@ -5,20 +5,12 @@ import * as esbuild from 'esbuild';
 import { execFileSync } from 'node:child_process';
 import { rmSync } from 'node:fs';
 import { workerUrls } from './worker-urls.mjs';
+import { ENTRIES, WORKERS } from './entries.mjs';
 
 const minify = process.argv.includes('--minify');
 rmSync('dist', { recursive: true, force: true });
 
-const entries = {
-  smaltgl: 'src/index.ts',
-  core: 'src/core/index.ts',
-  basemap: 'src/basemap/index.ts',
-  layers: 'src/layers/index.ts',
-  data: 'src/data/index.ts',
-  datasets: 'src/datasets/index.ts',
-  'smaltgl-tile-worker': 'src/basemap/tile-worker.ts',
-  'smaltgl-data-worker': 'src/datasets/worker.ts',
-};
+const entries = { ...ENTRIES, ...WORKERS };
 
 await esbuild.build({
   entryPoints: entries,
