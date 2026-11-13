@@ -20,7 +20,7 @@ await esbuild.build({
   target: 'es2022',
   platform: 'browser',
   // No shared chunks: every entry sits next to the worker files its `new URL(…, import.meta.url)` names.
-  plugins: [workerUrls({ 'tile-worker.ts': 'smaltgl-tile-worker.js', 'worker.ts': 'smaltgl-data-worker.js' })],
+  plugins: [workerUrls({ 'tile-worker.js': 'smaltgl-tile-worker.js', 'worker.ts': 'smaltgl-data-worker.js' })],
   minify,
   sourcemap: true,
   logLevel: 'warning',

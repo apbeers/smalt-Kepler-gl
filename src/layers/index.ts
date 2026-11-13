@@ -1,10 +1,3 @@
-// The data layers: each draws columns of typed arrays with WebGPU.
-export * from './layer.js';
-export { toProjected, type PointInput, type ResolvedColor } from './common.js';
-export * from './scatter.js';
-export * from './heatmap.js';
-export * from './aggregate.js';
-export * from './arcs.js';
-export * from './paths.js';
-export * from './polygons.js';
-export { triangulate } from './triangulate.js';
+// Every data layer. The code lives in the shared kit (smaltkit/geo/layers), so every smalt app draws with the same
+// pieces; this entry point keeps @smaltworks/smaltgl/layers working.
+export * from 'smaltkit/geo/layers';

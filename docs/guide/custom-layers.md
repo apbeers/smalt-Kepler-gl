@@ -119,5 +119,5 @@ const tBuffer = storageOf(device, color.t, emptyStorage(device), 'colour');
 const filterValues = filterUniforms([{ values: hour, range: [7, 9] }]);
 ```
 
-The source of each built-in layer (`src/layers/`) is a worked example: `scatter.ts` is the simplest, `aggregate.ts`
-adds compute passes, `heatmap.ts` an offscreen pass, `polygons.ts` vertex and index buffers.
+The source of each built-in layer (`src/geo/layers/` in [smaltkit](https://github.com/stenhoor/smaltkit)) is a worked
+example: `scatter.ts` is the simplest, `aggregate.ts` adds compute passes, `heatmap.ts` an offscreen pass, `polygons.ts` vertex and index buffers.

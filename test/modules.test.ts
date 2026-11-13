@@ -12,21 +12,20 @@ import { ENTRIES, WORKERS, specifier } from '../scripts/entries.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const entries = ENTRIES as Record<string, string>;
 
-/** Which folders of src/ each folder may import from. */
+/**
+ * The map's pieces (core, map, layers, basemap, data, visual) live in the shared kit, as `smaltkit/geo/<piece>`; the
+ * kit's own test (test/geo-modules.test.ts there) keeps their boundaries. Here each of smaltgl's entry points for them
+ * is one line that re-exports the kit's piece of the same name, so `@smaltworks/smaltgl/<name>` and
+ * `smaltkit/geo/<name>` are the same code.
+ */
+const KIT_ENTRIES = ['core', 'map', 'layers', 'layer-kit', 'scatter', 'heatmap', 'aggregate', 'arcs', 'paths', 'polygons', 'basemap', 'vector-tiles', 'data', 'geojson', 'smaltdb', 'smaltcy', 'visual'];
+
+/** Which folders of src/ each folder may import from (relative imports). */
 const ALLOWED: Record<string, readonly string[]> = {
-  core: ['core'],
-  map: ['core', 'map'],
-  layers: ['core', 'layers'],
-  basemap: ['core', 'basemap'],
-  data: ['data'],
   datasets: ['datasets'],
-  // Visuals for hosts compose the rest; host adapters use only the visual piece.
-  visual: ['core', 'map', 'layers', 'basemap', 'data', 'visual'],
+  // Host adapters use only the visual piece.
   hosts: ['visual'],
 };
-
-/** Layer implementations: none may import another (they share layer.ts, common.ts and triangulate.ts). */
-const LAYER_FILES = ['scatter', 'heatmap', 'aggregate', 'arcs', 'paths', 'polygons'];
 
 function sources(dir = join(root, 'src')): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? sources(join(dir, e.name)) : e.name.endsWith('.ts') && !e.name.endsWith('.d.ts') ? [join(dir, e.name)] : []));
@@ -40,36 +39,26 @@ function importsOf(file: string): string[] {
   return out;
 }
 
-describe('imports between folders', () => {
-  for (const file of sources()) {
-    const rel = relative(join(root, 'src'), file);
-    const folder = rel.includes('/') ? rel.split('/')[0] : '';
-    if (!folder) continue; // src/index.ts gathers everything
-    it(`${rel} imports only what its folder may`, () => {
-      for (const imp of importsOf(file)) {
-        const target = imp.split('/')[0];
-        expect(ALLOWED[folder], `${rel} imports ${imp}`).toContain(target);
-      }
+describe('imports', () => {
+  for (const name of KIT_ENTRIES) {
+    it(`${specifier(name)} is the kit's smaltkit/geo/${name}`, () => {
+      const code = readFileSync(join(root, entries[name]), 'utf8');
+      const imports = [...code.matchAll(/from\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);
+      expect(imports).toEqual([`smaltkit/geo/${name}`]);
     });
   }
 
-  it('no layer imports another layer', () => {
-    for (const name of LAYER_FILES) {
-      const imps = importsOf(join(root, 'src/layers', `${name}.ts`));
-      for (const other of LAYER_FILES) if (other !== name) expect(imps, `${name}.ts imports ${other}.ts`).not.toContain(`layers/${other}.ts`);
-    }
-  });
-
-  it('the tile source and the vector tile code use no GPU', () => {
-    for (const f of ['tile-source', 'tile-worker', 'build', 'mvt', 'style', 'tiles', 'vector-tiles']) {
-      const imps = importsOf(join(root, 'src/basemap', `${f}.ts`));
-      expect(imps, f).not.toContain('core/gpu.ts');
-      expect(imps.filter((i) => /renderer|labels/.test(i)), f).toEqual([]);
-    }
-  });
+  for (const file of sources()) {
+    const rel = relative(join(root, 'src'), file);
+    const folder = rel.includes('/') ? rel.split('/')[0] : '';
+    if (!ALLOWED[folder]) continue;
+    it(`${rel} imports only what its folder may`, () => {
+      for (const imp of importsOf(file)) expect(ALLOWED[folder], `${rel} imports ${imp}`).toContain(imp.split('/')[0]);
+    });
+  }
 });
 
-/** What a bundle of one entry point contains: its source files under src/. */
+/** What a bundle of one entry point contains: its source files under src/ and the kit's files under geo/. */
 async function bundled(entry: string): Promise<string[]> {
   const r = await esbuild.build({
     entryPoints: [join(root, entry)],
@@ -80,26 +69,20 @@ async function bundled(entry: string): Promise<string[]> {
     platform: 'browser',
     logLevel: 'silent',
   });
-  return Object.keys(r.metafile!.inputs).filter((p) => p.startsWith('src/'));
+  return Object.keys(r.metafile!.inputs).map((p) => p.replace(/^node_modules\/smaltkit\/dist\//, 'kit/')).filter((p) => /^(src|kit)\//.test(p));
 }
 
 describe('each entry point bundled on its own', () => {
   // What must never come along: [entry, pattern of files it must not hold].
   const forbidden: Record<string, RegExp> = {
-    core: /^src\/(?!core\/)/,
-    map: /^src\/(layers|basemap|data|datasets)\//,
-    'layer-kit': new RegExp(`^src/(map|basemap|data|datasets)/|^src/layers/(${LAYER_FILES.join('|')})\\.ts$`),
-    'vector-tiles': /^src\/(core\/gpu|core\/contract|map|layers|data|datasets)|^src\/basemap\/(tile-renderer|label-renderer|labels|basemap)\.ts$/,
-    basemap: /^src\/(map|layers|data|datasets)\//,
-    data: /^src\/(?!data\/)/,
-    geojson: /^src\/(?!data\/geojson\.ts)/,
-    smaltdb: /^src\/(?!data\/)|^src\/data\/smaltcy\.ts$/,
-    smaltcy: /^src\/(?!data\/)|^src\/data\/(smaltdb|geojson)\.ts$/,
-    datasets: /^src\/(?!datasets\/)/,
-    visual: /^src\/(datasets|hosts)\//,
+    core: /^kit\/(?!geo\/core\/)/,
+    map: /^kit\/geo\/(layers|basemap|data|visual)\//,
+    'vector-tiles': /^kit\/geo\/(core\/gpu|map|layers|data|visual)|^kit\/geo\/basemap\/(tile-renderer|label-renderer|labels|basemap)\.js$/,
+    scatter: /^kit\/geo\/(map|basemap|data|visual)\/|^kit\/geo\/layers\/(heatmap|aggregate|arcs|paths|polygons)\.js$/,
+    smaltdb: /^kit\/(?!geo\/data\/)/,
+    datasets: /^(?!src\/datasets\/)/,
+    visual: /^src\/(datasets|hosts)\/|^kit\/graph\//,
   };
-  for (const name of LAYER_FILES)
-    forbidden[name] = new RegExp(`^src/(map|basemap|data|datasets)/|^src/layers/(${LAYER_FILES.filter((n) => n !== name).join('|')})\\.ts$`);
 
   for (const [name, pattern] of Object.entries(forbidden)) {
     it(`${specifier(name)} holds only its own part`, async () => {

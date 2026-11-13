@@ -24,7 +24,7 @@ TypeScript is 7.1 (the owner asked for the newest with full WebGPU types): its D
 
 | Command | What it does |
 | --- | --- |
-| `npm ci` | Installs dependencies (smaltdb from npm; smaltcy pinned to a commit of `apbeers/smalt-graph-db`) |
+| `npm ci` | Installs dependencies (smaltdb from npm; smaltkit and smaltcy pinned to commits: `apbeers/smaltkit`, `apbeers/smalt-graph-db`) |
 | `npm run check` | Typecheck, then the unit tests (vitest). Before every commit |
 | `npm run test:browser` | Headless Chromium with WebGPU on SwiftShader: layers, basemap, then builds the site and runs every docs example and the tech demo. What CI runs |
 | `npm run bench` | Frame times per layer and size, headless (compare changes; don't quote) |
@@ -36,16 +36,24 @@ Playwright is installed globally in the cloud containers; don't run `playwright 
 
 ## Layers and rules
 
+- **The drawing code is smaltkit's (owner, 2026-11-13; ADR 0003).** core, map, layers, basemap, data and visual live in
+  the shared kit as `smaltkit/geo/<piece>` (`src/geo/` there), so smaltbi and the other apps draw with the same code.
+  Here each of those entry points is one line re-exporting the kit's piece. Change drawing code in smaltkit (its
+  rules: a branch and a PR, tests with `node --test`), then bump the `smaltkit` pin in package.json and run the
+  browser tests here: they are where the kit's GPU code meets a device. smaltgl's own code is `src/datasets/`,
+  `src/hosts/`, the docs and the tech demo. The rules below about layers, pipelines and WGSL apply to that code in the
+  kit.
 - **Modular (owner, 2026-11-12):** every piece is meant to be reused, changed or worked on alone. Each is an entry
   point in `scripts/entries.mjs` (the build, vitest and the docs site read it; package.json exports and tsconfig paths
-  follow it). `test/modules.test.ts` holds the import rules and bundles every entry alone to check what comes along:
-  core imports nothing else; map, layers and basemap import only core (they meet in `core/contract.ts`); no layer
-  imports another; the tile source and vector-tile code use no GPU; data and datasets stand alone. A new dependency
-  between pieces changes that test on purpose, never by accident.
+  follow it). The kit's `test/geo-modules.test.ts` holds the import rules between pieces (core imports nothing else;
+  map, layers and basemap import only core, meeting in `core/contract.ts`; no layer imports another; the tile source
+  and vector-tile code use no GPU; data stands alone); `test/modules.test.ts` here checks that each entry is the kit's
+  piece, that datasets stand alone, and bundles entries alone to check what comes along. A new dependency between
+  pieces changes those tests on purpose, never by accident.
 - A new entry point goes in `scripts/entries.mjs`, package.json `exports`, tsconfig `paths`, and the table in
   `docs/guide/modules.md` (the modules test checks all four) and the README. The ```` ```ts ```` examples in the
   guides to the pieces are type-checked (`test/docs-ts.test.ts`).
-- **Visuals for hosts (ADR 0002):** `src/visual/` is the host-agnostic piece (catalogue of visuals with roles and
+- **Visuals for hosts (ADR 0002):** `smaltkit/geo/visual` is the host-agnostic piece (catalogue of visuals with roles and
   options, `buildVisual`, `themeFromCss`, `MapVisual`). `src/hosts/` has one adapter per host, importing only
   `visual`; `src/hosts/smaltbi.ts` is built by `scripts/build-plugin.mjs` into `dist/smaltbi-plugin.js` (one file,
   nothing to import), and `test/browser/smaltbi.mjs` loads it the way smaltbi does. The catalogue is a contract with
@@ -53,13 +61,13 @@ Playwright is installed globally in the cloud containers; don't run `playwright 
   side (steps, file pointers, acceptance criteria): keep it current when the plugin or the catalogue changes.
 - The tech demo's logic is plain TypeScript in `docs/.vitepress/theme/demo/` (layers for a dataset and settings,
   files, links), tested in `test/demo.test.ts`; `TechDemo.vue` is the page around it.
-- smaltdb and smaltcy are passed in and used through their public methods: smaltgl imports neither. No runtime
-  dependencies: ask the owner before adding any package, as the family's rules say.
+- smaltdb and smaltcy are passed in and used through their public methods: smaltgl imports neither. The one runtime
+  dependency is the family's smaltkit; ask the owner before adding any other package, as the family's rules say.
 - A layer uploads its data once in `attach`; anything that changes per frame (view, filters, time, looks) is a uniform
   written into the frame's arena slot. Keep it that way: no per-frame uploads proportional to the data.
 - Every pipeline in the map's pass declares `NO_STENCIL` (or the basemap's stencil states) and the map's sample count.
 - WGSL: `target` is a reserved word.
-- The OpenMapTiles schema's layer and class names live only in `src/basemap/style.ts`.
+- The OpenMapTiles schema's layer and class names live only in smaltkit's `src/geo/basemap/style.ts`.
 - Every ```` ```js run ```` block in `docs/` runs on a live map; `test/browser/docs.mjs` runs each on the built site.
   Examples use only names in scope (`map`, smaltgl's exports, `generate`, `smaltdb`, `smaltcy`).
 - The tech demo's datasets are in `docs/.vitepress/theme/demo-datasets.ts`; `test/browser/demo.mjs` loads each.

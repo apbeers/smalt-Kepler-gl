@@ -139,5 +139,8 @@
     "typescript": "^7.1.0-beta",
     "vitepress": "1.6.4",
     "vitest": "^5.1.0"
+  },
+  "dependencies": {
+    "smaltkit": "github:apbeers/smaltkit#8726596097be95e084033db5743c581630a890d2"
   }
 }

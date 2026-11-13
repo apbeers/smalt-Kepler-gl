@@ -4,11 +4,12 @@
 import * as esbuild from 'esbuild';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { WORKERS } from './entries.mjs';
 
 const argv = process.argv.slice(2);
 const out = argv.includes('--out') ? argv[argv.indexOf('--out') + 1] : 'dist/smaltbi-plugin.js';
 
-const worker = await esbuild.build({ entryPoints: ['src/basemap/tile-worker.ts'], bundle: true, format: 'esm', target: 'es2022', platform: 'browser', minify: true, write: false, logLevel: 'warning' });
+const worker = await esbuild.build({ entryPoints: [WORKERS['smaltgl-tile-worker']], bundle: true, format: 'esm', target: 'es2022', platform: 'browser', minify: true, write: false, logLevel: 'warning' });
 const workerCode = worker.outputFiles[0].text;
 
 const plugin = await esbuild.build({

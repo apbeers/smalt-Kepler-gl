@@ -14,8 +14,8 @@ In smaltgl: [ADR 0002](../adr/0002-visuals-for-hosts) (why it is built this way)
 | Piece | Where (smaltgl) | What it is |
 | --- | --- | --- |
 | The plugin | `src/hosts/smaltbi.ts`, built by `scripts/build-plugin.mjs` into `dist/smaltbi-plugin.js` | A smaltbi plugin (API 1): one ES module, nothing to import, the tile worker inlined, about 130 KB |
-| The visuals it registers | `src/visual/catalogue.ts` (`VISUALS`) | `smaltgl.points`, `smaltgl.heatmap`, `smaltgl.hexbin`, `smaltgl.arcs`, `smaltgl.regions` |
-| The controller | `src/visual/visual.ts` (`MapVisual`) | Mounted once per frame, updated on every `render(ctx)`; keeps the GPU device and tiles |
+| The visuals it registers | smaltkit `src/geo/visual/catalogue.ts` (`VISUALS`, from `smaltkit/geo/visual`) | `smaltgl.points`, `smaltgl.heatmap`, `smaltgl.hexbin`, `smaltgl.arcs`, `smaltgl.regions` |
+| The controller | smaltkit `src/geo/visual/visual.ts` (`MapVisual`, from `smaltkit/geo/visual`) | Mounted once per frame, updated on every `render(ctx)`; keeps the GPU device and tiles |
 | Its test | `test/browser/smaltbi.mjs`, `test/browser/pages/smaltbi-host.ts` | Loads the built file as smaltbi's loader does and drives it with smaltbi-shaped data |
 
 The visuals' roles (smaltbi `RoleDef`s; all `max: 1`):
@@ -29,10 +29,32 @@ The visuals' roles (smaltbi `RoleDef`s; all `max: 1`):
 | `smaltgl.regions` | `location` | `values` | 50,000 | yes |
 
 Every visual has a `basemap` option (`auto` follows the theme, `light`, `dark`, `none`) and `tilt`; the rest are in
-`src/visual/catalogue.ts`. Type names and role names are a contract with saved reports: smaltgl adds, never renames.
+the catalogue (smaltkit `src/geo/visual/catalogue.ts`). Type names and role names are a contract with saved reports: smaltgl adds, never renames.
 
 The plugin reads these theme variables (already set in smaltbi's `styles/report.css`): `--sk-c0` … `--sk-c11`
 (categories), `--sk-seq-lo` and `--sk-seq-hi` (values), `--sk-surface` (light or dark).
+
+## Two ways in
+
+The drawing code lives in [smaltkit](https://github.com/stenhoor/smaltkit), which smaltbi already depends on
+([ADR 0003](../adr/0003-visuals-in-smaltkit)): maps as `smaltkit/geo/…` and graphs as `smaltkit/graph`. So smaltbi can
+take the visuals either way:
+
+- **Built in, from smaltkit (the way to go for smaltbi's own visuals).** Bump smaltbi's `smaltkit` pin to a commit
+  with `smaltkit/geo` (until it is merged into stenhoor/smaltkit, it is on the fork:
+  `github:apbeers/smaltkit#<commit>`, branch `claude/blissful-bohr-5k2i1i`). Then add a visual module in smaltbi
+  (next to its `smaltkit/maps` map) that registers the catalogue's visuals as `VisualDef`s and mounts a `MapVisual` per
+  frame. smaltgl's `src/hosts/smaltbi.ts` is that adapter, written for plugin API 1 (about 200 lines): copy its
+  mapping of `ctx` to `VisualData`, the theme variables and the selection, and drop what a plugin needs and a
+  built-in visual doesn't (the inlined tile worker, `__SMALTGL_TILE_WORKER__`). Vite bundles the tile worker as it
+  bundles smaltkit's type checker's: keep `smaltkit` in `optimizeDeps.exclude`. The steps below apply the same way;
+  2.1 (teardown) becomes a direct call to `MapVisual.destroy()`.
+- **As a plugin file** (no smaltbi change at all): steps 0 and 1.
+
+Graph data (smaltcy) has two visuals to come from the same kit: points and arcs on a map (`smaltkit/geo/smaltcy`,
+`graphLayers`: nodes with coordinates, relationships as arcs) works today; a node-link graph visual over
+`smaltkit/graph` (`createGraphView`, `resultsToGraph`) needs a catalogue entry like the map visuals', which isn't
+written yet.
 
 ## Step 0: get the plugin file
 
@@ -94,7 +116,7 @@ map holds its GPU memory.
   - an error message written over the body (`rt.body.innerHTML = …`);
   - a change of the visual's type.
 
-**smaltgl side.** The adapter's `dispose` calls `MapVisual.destroy()` and stops the periodic check
+**smaltgl side.** The plugin adapter's `dispose` calls `MapVisual.destroy()` and stops the periodic check
 (`src/hosts/smaltbi.ts`: `sweep`).
 
 **Done when:** a page switch frees each map's device immediately. Test with a plugin visual that counts `dispose`
@@ -146,7 +168,7 @@ frame and copy the canvas (`toBlob` in the same task as the frame).
 **How.** smaltbi's filters already have `between` (`src/core/types.ts`, `FilterOp`), and each data column carries its
 `field` (`ResolvedField`, with `ref`). The plugin can call `ctx.api.setFilters([{ field: lat.field.ref, op: 'between',
 values: [south, north] }, { field: lng.field.ref, op: 'between', values: [west, east] }])` for a clicked cell. This is
-smaltgl's to do (`src/hosts/smaltbi.ts`, `src/visual/visual.ts`).
+smaltgl's to do (`src/hosts/smaltbi.ts`, and smaltkit's `src/geo/visual/visual.ts`).
 
 **smaltbi:** confirm only that a visual's own `between` selections highlight rather than filter itself, as tuple
 selections do (`ReportView.setSelection`, `restyle`). The plugin draws them, since it is self-interactive.

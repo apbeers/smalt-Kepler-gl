@@ -1,8 +1,13 @@
 # Using the pieces
 
 smaltgl is built from parts that work on their own. Each is an entry point: import one, and your bundle holds it and
-what it is built on, nothing more. `test/modules.test.ts` keeps it that way: it checks which folder imports which, and
-bundles every entry point alone to check what comes along.
+what it is built on, nothing more.
+
+The parts live in the family's shared kit, [smaltkit](https://github.com/stenhoor/smaltkit), as `smaltkit/geo/<part>`,
+so that every smalt app (smaltbi's reports among them) draws maps with the same code
+([ADR 0003](../adr/0003-visuals-in-smaltkit)). Each of smaltgl's entry points below is one line that re-exports the kit's part of the same name: import either. The
+kit's `test/geo-modules.test.ts` checks which part imports which and what each loads; smaltgl's `test/modules.test.ts`
+checks that its entry points are the kit's parts and bundles them alone.
 
 ```
 core ── the contracts, projection, camera, colours, GPU setup
@@ -18,27 +23,27 @@ visual     map visuals for hosts: catalogue, MapVisual          (core, map, laye
 The map, the layers and the basemap never import each other: they meet in `core/contract.ts`, so a layer from
 somewhere else plugs into the map, and the basemap's parts can serve another renderer.
 
-| Entry point | Source | Use it to |
+| Entry point | The code | Use it to |
 | --- | --- | --- |
-| `@smaltworks/smaltgl` | `src/index.ts` | Everything but the datasets |
-| `@smaltworks/smaltgl/core` | `src/core/` | Project coordinates, drive a camera, make colour ramps, set up WebGPU; the contracts |
-| `@smaltworks/smaltgl/map` | `src/map/` | A map in a page (`createMap`), or just the renderer (`MapRenderer`), input, tooltip or attribution |
-| `@smaltworks/smaltgl/layers` | `src/layers/` | Every built-in layer |
-| `@smaltworks/smaltgl/scatter` | `src/layers/scatter.ts` | Points only |
-| `@smaltworks/smaltgl/heatmap` | `src/layers/heatmap.ts` | Density only |
-| `@smaltworks/smaltgl/aggregate` | `src/layers/aggregate.ts` | Hexagon and grid bins only |
-| `@smaltworks/smaltgl/arcs` | `src/layers/arcs.ts` | Arcs only |
-| `@smaltworks/smaltgl/paths` | `src/layers/paths.ts` | Paths and trips only |
-| `@smaltworks/smaltgl/polygons` | `src/layers/polygons.ts` | Polygons only |
-| `@smaltworks/smaltgl/layer-kit` | `src/layers/kit.ts` | Write a layer of your own ([guide](./custom-layers)) |
-| `@smaltworks/smaltgl/basemap` | `src/basemap/` | The basemap, or one of its parts: `TileSource`, `TileRenderer`, `LabelRenderer` |
-| `@smaltworks/smaltgl/vector-tiles` | `src/basemap/vector-tiles.ts` | Decode vector tiles and build their geometry, with no GPU (workers, servers, tests) |
-| `@smaltworks/smaltgl/data` | `src/data/` | Every data adapter |
-| `@smaltworks/smaltgl/smaltdb` | `src/data/smaltdb.ts` | SQL results as columns; load columns and CSV files |
-| `@smaltworks/smaltgl/smaltcy` | `src/data/smaltcy.ts` | Cypher results as points and arcs |
-| `@smaltworks/smaltgl/geojson` | `src/data/geojson.ts` | GeoJSON as columns |
-| `@smaltworks/smaltgl/datasets` | `src/datasets/` | Generate sample data, in a worker or not |
-| `@smaltworks/smaltgl/visual` | `src/visual/` | Map visuals for hosts (BI tools, notebooks): a catalogue with roles and options, and `MapVisual` ([guide](./embedding)) |
+| `@smaltworks/smaltgl` | `smaltkit/geo` | Everything but the datasets |
+| `@smaltworks/smaltgl/core` | `smaltkit/geo/core` | Project coordinates, drive a camera, make colour ramps, set up WebGPU; the contracts |
+| `@smaltworks/smaltgl/map` | `smaltkit/geo/map` | A map in a page (`createMap`), or just the renderer (`MapRenderer`), input, tooltip or attribution |
+| `@smaltworks/smaltgl/layers` | `smaltkit/geo/layers` | Every built-in layer |
+| `@smaltworks/smaltgl/scatter` | `smaltkit/geo/scatter` | Points only |
+| `@smaltworks/smaltgl/heatmap` | `smaltkit/geo/heatmap` | Density only |
+| `@smaltworks/smaltgl/aggregate` | `smaltkit/geo/aggregate` | Hexagon and grid bins only |
+| `@smaltworks/smaltgl/arcs` | `smaltkit/geo/arcs` | Arcs only |
+| `@smaltworks/smaltgl/paths` | `smaltkit/geo/paths` | Paths and trips only |
+| `@smaltworks/smaltgl/polygons` | `smaltkit/geo/polygons` | Polygons only |
+| `@smaltworks/smaltgl/layer-kit` | `smaltkit/geo/layer-kit` | Write a layer of your own ([guide](./custom-layers)) |
+| `@smaltworks/smaltgl/basemap` | `smaltkit/geo/basemap` | The basemap, or one of its parts: `TileSource`, `TileRenderer`, `LabelRenderer` |
+| `@smaltworks/smaltgl/vector-tiles` | `smaltkit/geo/vector-tiles` | Decode vector tiles and build their geometry, with no GPU (workers, servers, tests) |
+| `@smaltworks/smaltgl/data` | `smaltkit/geo/data` | Every data adapter |
+| `@smaltworks/smaltgl/smaltdb` | `smaltkit/geo/smaltdb` | SQL results as columns; load columns and CSV files |
+| `@smaltworks/smaltgl/smaltcy` | `smaltkit/geo/smaltcy` | Cypher results as points and arcs |
+| `@smaltworks/smaltgl/geojson` | `smaltkit/geo/geojson` | GeoJSON as columns |
+| `@smaltworks/smaltgl/datasets` | `src/datasets/` (smaltgl's own) | Generate sample data, in a worker or not |
+| `@smaltworks/smaltgl/visual` | `smaltkit/geo/visual` | Map visuals for hosts (BI tools, notebooks): a catalogue with roles and options, and `MapVisual` ([guide](./embedding)) |
 
 The examples below are type-checked by `test/docs-ts.test.ts`.
 

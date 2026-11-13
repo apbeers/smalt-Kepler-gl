@@ -17,14 +17,17 @@ tile workers: fetch ─▶ decode MVT ─▶ style groups ─▶ fans, segments,
 
 | Folder | What it does | May import |
 | --- | --- | --- |
-| `src/core/` | The contracts between pieces (`contract.ts`), Web Mercator, the camera, colours and ramps (OKLab), WebGPU setup, the uniform arena | nothing else |
-| `src/map/` | `renderer.ts` (device, frames, layers, basemap, picking, timing), `input.ts`, `overlays.ts` (tooltip, attribution), `map.ts` (them together) | core |
-| `src/layers/` | One file per layer; `layer.ts`, `common.ts` and `triangulate.ts` shared; `kit.ts` for layers of your own | core |
-| `src/basemap/` | `tile-source.ts` (workers, cache, plan; no GPU), `tile-renderer.ts`, `label-renderer.ts` and `labels.ts`, `mvt.ts` and `build.ts` (decoding), `style.ts`, `basemap.ts` (them together) | core |
-| `src/data/` | `smaltdb.ts`, `smaltcy.ts`, `geojson.ts`, `columns.ts` | nothing |
-| `src/datasets/` | One file per generator, `random.ts`, `types.ts`, the registry and its worker | nothing |
+| `smaltkit/src/geo/core/` | The contracts between pieces (`contract.ts`), Web Mercator, the camera, colours and ramps (OKLab), WebGPU setup, the uniform arena | nothing else |
+| `smaltkit/src/geo/map/` | `renderer.ts` (device, frames, layers, basemap, picking, timing), `input.ts`, `overlays.ts` (tooltip, attribution), `map.ts` (them together) | core |
+| `smaltkit/src/geo/layers/` | One file per layer; `layer.ts`, `common.ts` and `triangulate.ts` shared; `kit.ts` for layers of your own | core |
+| `smaltkit/src/geo/basemap/` | `tile-source.ts` (workers, cache, plan; no GPU), `tile-renderer.ts`, `label-renderer.ts` and `labels.ts`, `mvt.ts` and `build.ts` (decoding), `style.ts`, `basemap.ts` (them together) | core |
+| `smaltkit/src/geo/data/` | `smaltdb.ts`, `smaltcy.ts`, `geojson.ts`, `columns.ts` | nothing |
+| `src/datasets/` (here) | One file per generator, `random.ts`, `types.ts`, the registry and its worker | nothing |
 
-The rules are tested: see [Using the pieces](./guide/modules).
+The map's pieces live in the shared kit, [smaltkit](https://github.com/stenhoor/smaltkit) (`src/geo/` there; [ADR
+0003](./adr/0003-visuals-in-smaltkit)); `src/visual/` there holds the visuals for hosts. smaltgl keeps the datasets, the
+host adapters (`src/hosts/`), the docs, the tech demo and the browser tests, and its entry points re-export the kit's
+pieces. The rules are tested: see [Using the pieces](./guide/modules).
 
 ## Decisions that shape it
 
@@ -36,4 +39,5 @@ The rules are tested: see [Using the pieces](./guide/modules).
   `origin − camera` each frame, computed in 64-bit on the CPU.
 - **One uniform buffer a frame.** Every draw takes a 256-byte slot of an arena bound with a dynamic offset: hundreds
   of tile draws cost one upload.
-- **No runtime dependencies.** smaltdb and smaltcy are used through their public methods, passed in by the app.
+- **No runtime dependencies but the family's kit.** smaltdb and smaltcy are used through their public methods, passed
+  in by the app; the drawing code is smaltkit's.

@@ -37,8 +37,9 @@ export default defineConfig({
         { find: /^@smaltworks\/smaltcy$/, replacement: path.resolve(here, '../../node_modules/@smaltworks/smaltcy/src/index.ts') },
       ],
     },
-    // smaltdb starts its worker with new URL('./smaltdb-worker.js', import.meta.url): keep it out of pre-bundling.
-    optimizeDeps: { exclude: ['smaltdb'] },
+    // smaltdb and smaltkit's basemap start workers with new URL('./….js', import.meta.url): keep them out of
+    // pre-bundling.
+    optimizeDeps: { exclude: ['smaltdb', 'smaltkit'] },
     worker: { format: 'es' },
     build: { chunkSizeWarningLimit: 2000 },
   },

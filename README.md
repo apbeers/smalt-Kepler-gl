@@ -50,8 +50,14 @@ tile workers: fetch → decode vector tiles → style groups → buffers
 
 Each piece is an entry point of its own: import one, and your bundle holds it and what it is built on, nothing more.
 The map, the layers and the basemap meet only in `core/contract.ts`, so each can be used, replaced or worked on
-without the others. [Using the pieces](docs/guide/modules.md) has the full table and an example of each;
-`test/modules.test.ts` keeps the boundaries.
+without the others. [Using the pieces](docs/guide/modules.md) has the full table and an example of each.
+
+The drawing code lives in the family's shared kit, [smaltkit](https://github.com/stenhoor/smaltkit), as
+`smaltkit/geo/<piece>` (and smaltcy's graph renderer as `smaltkit/graph`), so every smalt app draws with the same code:
+each entry point below except `/datasets` re-exports the kit's piece of the same name
+([ADR 0003](docs/adr/0003-visuals-in-smaltkit.md)). The kit's tests keep the boundaries between pieces; this
+repository keeps the datasets, the host plugins, the docs and tech demo, and the browser tests that run it all on a
+WebGPU device.
 
 | Entry point (`@smaltworks/smaltgl…`) | Use it to |
 | --- | --- |

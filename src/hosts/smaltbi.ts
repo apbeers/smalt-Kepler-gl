@@ -11,10 +11,7 @@
  * the page on every render and every few seconds, and frees the GPU when it is gone. (A `dispose` hook in smaltbi
  * would make this exact: docs/guide/embedding.md lists what smaltbi needs.)
  */
-import { VISUALS, type VisualKind } from '../visual/catalogue.js';
-import { themeFromCss, type VisualTheme } from '../visual/theme.js';
-import type { VisualColumn, VisualData } from '../visual/build.js';
-import { MapVisual } from '../visual/visual.js';
+import { MapVisual, VISUALS, themeFromCss, type VisualColumn, type VisualData, type VisualKind, type VisualTheme } from '../visual/index.js';
 
 // The parts of smaltbi's plugin API this plugin uses (src/visuals/api.ts there), written out: the plugin imports
 // nothing.

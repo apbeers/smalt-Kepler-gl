@@ -30,7 +30,8 @@ export const HOST_PLUGINS = {
 
 /** Workers, built next to the entries. */
 export const WORKERS = {
-  'smaltgl-tile-worker': 'src/basemap/tile-worker.ts',
+  // The basemap's tile worker comes from the shared kit (smaltkit/geo), built.
+  'smaltgl-tile-worker': 'node_modules/smaltkit/dist/geo/basemap/tile-worker.js',
   'smaltgl-data-worker': 'src/datasets/worker.ts',
 };
 

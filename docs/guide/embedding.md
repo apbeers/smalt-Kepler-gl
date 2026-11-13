@@ -2,7 +2,8 @@
 
 smaltgl's maps can be visuals inside another app: a BI report, a notebook, a dashboard. The host owns the data, the
 query, the layout, the theme and the selection; smaltgl draws. `@smaltworks/smaltgl/visual` is the piece for that,
-and it knows nothing of any particular host. Adapters for one host each live in `src/hosts/`; the first is
+and it knows nothing of any particular host. It is the family kit's `smaltkit/geo/visual`
+([ADR 0003](../adr/0003-visuals-in-smaltkit)): an app that already uses smaltkit imports it from there. Adapters for one host each live in `src/hosts/`; the first is
 [smaltbi](https://github.com/stenhoor/smaltbi)'s plugin.
 
 ## The contract

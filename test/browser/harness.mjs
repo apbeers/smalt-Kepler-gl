@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 import * as esbuild from 'esbuild';
 import { workerUrls } from '../../scripts/worker-urls.mjs';
+import { WORKERS } from '../../scripts/entries.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -47,10 +48,10 @@ export async function serve(entry, { routes = {} } = {}) {
     sourcemap: 'inline',
     logLevel: 'warning',
     alias: { '@smaltworks/smaltcy': join(root, 'node_modules/@smaltworks/smaltcy/src/index.ts') },
-    plugins: [workerUrls({ 'tile-worker.ts': 'tile-worker.js', 'worker.ts': 'data-worker.js' })],
+    plugins: [workerUrls({ 'tile-worker.js': 'tile-worker.js', 'worker.ts': 'data-worker.js' })],
   });
   // The tile and data workers, bundled on their own, as the package ships them.
-  for (const [name, file] of [['tile-worker', 'src/basemap/tile-worker.ts'], ['data-worker', 'src/datasets/worker.ts']]) {
+  for (const [name, file] of [['tile-worker', WORKERS['smaltgl-tile-worker']], ['data-worker', WORKERS['smaltgl-data-worker']]]) {
     await esbuild.build({ entryPoints: { [name]: join(root, file) }, outdir: dir, bundle: true, format: 'esm', target: 'es2022', platform: 'browser', logLevel: 'silent' }).catch(() => {});
   }
   const html = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#fff}#map{position:absolute;inset:0}</style></head><body><div id="map"></div><script type="module" src="/page.js"></script></body></html>`;

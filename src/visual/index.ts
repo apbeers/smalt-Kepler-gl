@@ -1,6 +1,3 @@
-// Map visuals for hosts (BI tools, notebooks, dashboards): a catalogue of visuals with their roles and options, the
-// pure step from role-tagged columns to layers, the host's theme from CSS, and the MapVisual controller.
-export * from './catalogue.js';
-export * from './theme.js';
-export { buildVisual, numbers, codes, type VisualColumn, type VisualData, type BuiltVisual } from './build.js';
-export { MapVisual, optionsFor, type MountOptions, type VisualInput } from './visual.js';
+// Map visuals for hosts: the catalogue, buildVisual, themeFromCss and MapVisual. The code lives in the shared kit (smaltkit/geo/visual), so every smalt app draws with the same
+// pieces; this entry point keeps @smaltworks/smaltgl/visual working.
+export * from 'smaltkit/geo/visual';
