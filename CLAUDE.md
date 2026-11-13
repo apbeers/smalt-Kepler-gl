@@ -49,7 +49,8 @@ Playwright is installed globally in the cloud containers; don't run `playwright 
   options, `buildVisual`, `themeFromCss`, `MapVisual`). `src/hosts/` has one adapter per host, importing only
   `visual`; `src/hosts/smaltbi.ts` is built by `scripts/build-plugin.mjs` into `dist/smaltbi-plugin.js` (one file,
   nothing to import), and `test/browser/smaltbi.mjs` loads it the way smaltbi does. The catalogue is a contract with
-  saved reports: add roles and options, don't rename them.
+  saved reports: add roles and options, don't rename them. `docs/integrations/smaltbi.md` is the handoff for smaltbi's
+  side (steps, file pointers, acceptance criteria): keep it current when the plugin or the catalogue changes.
 - The tech demo's logic is plain TypeScript in `docs/.vitepress/theme/demo/` (layers for a dataset and settings,
   files, links), tested in `test/demo.test.ts`; `TechDemo.vue` is the page around it.
 - smaltdb and smaltcy are passed in and used through their public methods: smaltgl imports neither. No runtime

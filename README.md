@@ -65,7 +65,7 @@ without the others. [Using the pieces](docs/guide/modules.md) has the full table
 | `/data`, `/smaltdb`, `/smaltcy`, `/geojson` | Data adapters, together or one at a time |
 | `/datasets` | Sample data generators, in a worker or not |
 | `/visual` | Map visuals for other apps: a catalogue with roles and options, and `MapVisual` ([guide](docs/guide/embedding.md)) |
-| `/smaltbi-plugin` | The visuals as a [smaltbi](https://github.com/stenhoor/smaltbi) plugin: one file, nothing to import |
+| `/smaltbi-plugin` | The visuals as a [smaltbi](https://github.com/stenhoor/smaltbi) plugin: one file, nothing to import. Integrating it: [docs/integrations/smaltbi.md](docs/integrations/smaltbi.md) |
 
 ## Development
 

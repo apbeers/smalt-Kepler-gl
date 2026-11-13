@@ -97,6 +97,7 @@ export default defineConfig({
           { text: 'Using the pieces', link: '/guide/modules' },
           { text: 'Writing a layer', link: '/guide/custom-layers' },
           { text: 'In other apps (smaltbi)', link: '/guide/embedding' },
+          { text: 'Integrating into smaltbi', link: '/integrations/smaltbi' },
           { text: 'Tech demo', link: '/demo' },
         ],
       },

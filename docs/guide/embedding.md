@@ -89,6 +89,9 @@ What the plugin does with smaltbi's API (version 1):
 
 ### What smaltbi needs for maps to be first-class
 
+The step-by-step handoff for smaltbi's side, with file pointers and acceptance criteria, is
+[Integrating smaltgl's map visuals into smaltbi](../integrations/smaltbi).
+
 The plugin works with smaltbi's API as it is. These changes would make it exact rather than careful; they are
 recorded in [ADR 0002](../adr/0002-visuals-for-hosts):
 
