@@ -20,6 +20,12 @@ export const ENTRIES = {
   smaltdb: 'src/data/smaltdb.ts',
   smaltcy: 'src/data/smaltcy.ts',
   datasets: 'src/datasets/index.ts',
+  visual: 'src/visual/index.ts',
+};
+
+/** Built on their own, into one file with nothing to import (scripts/build-plugin.mjs): plugins for hosts. */
+export const HOST_PLUGINS = {
+  'smaltbi-plugin': 'src/hosts/smaltbi.ts',
 };
 
 /** Workers, built next to the entries. */

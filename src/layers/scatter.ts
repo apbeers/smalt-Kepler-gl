@@ -8,7 +8,7 @@ import { metersToWorld, yToLat, type Projected } from '../core/mercator.js';
 import { parseColor } from '../core/color.js';
 import {
   baseEntries, describeRow, emptyStorage, FILTER_WGSL, filterUniforms, makeRamp, PICK_TARGET, premul, resolveColor,
-  storageEntry, storageOf, toProjected, type PointInput, type Ramp, type ResolvedColor,
+  Selection, selectionWgsl, storageEntry, storageOf, toProjected, type PointInput, type Ramp, type ResolvedColor,
 } from './common.js';
 import { autoId, extent, originOffset, RAMP_WGSL, type ColorSpec, type Frame, type GpuFilter, type Layer, type LayerGpu } from './layer.js';
 
@@ -43,7 +43,7 @@ struct U {
   fa: vec3f, hasColor: f32,
   fb: vec3f, hasSize: f32,
   sizeDomain: vec2f, radiusMax: f32, opacity: f32,
-  highlight: f32, slot: f32, worldRadius: f32, pad: f32,
+  highlight: f32, slot: f32, worldRadius: f32, selOn: f32,
 };
 @group(1) @binding(0) var<uniform> u: U;
 ${RAMP_WGSL}
@@ -52,6 +52,7 @@ ${RAMP_WGSL}
 @group(1) @binding(5) var<storage, read> size: array<f32>;
 @group(1) @binding(6) var<storage, read> filterA: array<f32>;
 @group(1) @binding(7) var<storage, read> filterB: array<f32>;
+${selectionWgsl(8)}
 ${FILTER_WGSL}
 
 struct V {
@@ -77,7 +78,7 @@ const CORNERS = array<vec2f, 6>(vec2f(-1, -1), vec2f(1, -1), vec2f(-1, 1), vec2f
   var c = u.color;
   if (u.hasColor > 0.5) { c = ramp(colorT[i]); }
   if (f32(i) == u.highlight) { r = r + 3.0; }
-  c = vec4f(c.rgb * c.a, c.a) * u.opacity;
+  c = vec4f(c.rgb * c.a, c.a) * u.opacity * selectionAlpha(i, u.selOn);
   let corner = CORNERS[vi];
   let extent = r + u.stroke + 1.0;
   let centre = toPixels(pos[i] + u.offset);
@@ -149,7 +150,7 @@ export class ScatterLayer implements Layer {
     const V = GPUShaderStage.VERTEX, F = GPUShaderStage.FRAGMENT;
     const layout = device.createBindGroupLayout({
       label: 'scatter',
-      entries: [...baseEntries(V | F), ...[3, 4, 5, 6, 7].map((b) => storageEntry(b, V))],
+      entries: [...baseEntries(V | F), ...[3, 4, 5, 6, 7, 8].map((b) => storageEntry(b, V))],
     });
     const module = device.createShaderModule({ label: 'scatter', code: WGSL });
     const pl = device.createPipelineLayout({ bindGroupLayouts: [gpu.viewLayout, layout] });
@@ -180,6 +181,8 @@ export class ScatterLayer implements Layer {
       empty,
     ];
     this.ramp = makeRamp(device, this.col.table);
+    this.selection = new Selection(device, empty);
+    if (this.pendingSelection !== undefined) this.selection.set(this.pendingSelection);
     this.layout = layout;
   }
 
@@ -187,7 +190,7 @@ export class ScatterLayer implements Layer {
 
   private bindGroup(): GPUBindGroup {
     const gpu = this.gpu!;
-    if (!this.group || this.groupVersion !== gpu.arena.version) {
+    if (!this.group || this.groupVersion !== gpu.arena.version || this.selectionVersion !== this.selection!.version) {
       this.group = gpu.device.createBindGroup({
         layout: this.layout!,
         entries: [
@@ -195,12 +198,26 @@ export class ScatterLayer implements Layer {
           { binding: 1, resource: this.ramp!.texture.createView() },
           { binding: 2, resource: this.ramp!.sampler },
           ...this.buffers.slice(0, 5).map((buffer, k) => ({ binding: 3 + k, resource: { buffer } })),
+          { binding: 8, resource: { buffer: this.selection!.buffer } },
         ],
       });
       this.groupVersion = gpu.arena.version;
+      this.selectionVersion = this.selection!.version;
     }
     return this.group;
   }
+
+  private selection?: Selection;
+  private selectionVersion = -1;
+
+  /** Selected rows (a byte each, non-zero for selected), or null: unselected rows are dimmed. */
+  setSelection(mask: Uint8Array | null): void {
+    if (this.selection) this.selection.set(mask);
+    else this.pendingSelection = mask;
+    this.redraw();
+  }
+
+  private pendingSelection?: Uint8Array | null;
 
   /** Changes how points look without re-uploading them. */
   update(changes: Partial<Pick<ScatterOptions, 'radius' | 'radiusMax' | 'opacity' | 'stroke' | 'units'>>): void {
@@ -231,7 +248,7 @@ export class ScatterLayer implements Layer {
       fa0, fa1, fa2, this.col.mode,
       fb0, fb1, fb2, o.size ? 1 : 0,
       sizeDomain[0], sizeDomain[1], o.radiusMax ?? radius * 4, o.opacity ?? 1,
-      this.highlighted, slot, worldRadius, 0,
+      this.highlighted, slot, worldRadius, this.selection?.active ? 1 : 0,
     ];
   }
 
@@ -262,6 +279,7 @@ export class ScatterLayer implements Layer {
   }
 
   destroy(): void {
+    this.selection?.destroy();
     for (const b of new Set(this.buffers)) b.destroy();
     this.ramp?.texture.destroy();
   }

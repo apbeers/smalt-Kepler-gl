@@ -6,6 +6,7 @@ import { BLEND_OVER, bufferFrom, DEPTH_TESTED, NO_STENCIL, VIEW_WGSL } from '../
 import { parseColor } from '../core/color.js';
 import { projectColumns, type Bounds } from '../core/mercator.js';
 import { describeRow, emptyStorage, makeRamp, PICK_TARGET, premul, resolveColor, storageEntry, storageOf, type Ramp, type ResolvedColor } from './common.js';
+import { Selection, selectionWgsl } from './common.js';
 import { autoId, originOffset, RAMP_WGSL, type ColorSpec, type Frame, type GpuFilter, type Layer, type LayerGpu } from './layer.js';
 import { triangulate } from './triangulate.js';
 
@@ -45,12 +46,14 @@ struct U {
   stroke: vec4f,
   hasColor: f32, slot: f32, highlight: f32, hasFilter: f32,
   range: vec2f, extrude: f32, heightScale: f32,
+  selOn: f32, sp0: f32, sp1: f32, sp2: f32,
 };
 @group(1) @binding(0) var<uniform> u: U;
 ${RAMP_WGSL}
 @group(1) @binding(3) var<storage, read> colorT: array<f32>;
 @group(1) @binding(4) var<storage, read> filterA: array<f32>;
 @group(1) @binding(5) var<storage, read> heights: array<f32>;
+${selectionWgsl(6)}
 // Height in pixels: a value per polygon times the scale, or the scale alone.
 fn heightOf(poly: u32) -> f32 {
   if (u.extrude < 0.5) { return 0.0; }
@@ -74,7 +77,7 @@ struct F { @builtin(position) p: vec4f, @location(0) @interpolate(flat) color: v
   o.p = project(toPixels(p + u.offset), heightOf(poly));
   let c = colorOf(poly);
   let a = select(u.opacity, 1.0, u.extrude > 0.5);
-  o.color = vec4f(c.rgb * c.a, c.a) * a;
+  o.color = vec4f(c.rgb * c.a, c.a) * a * selectionAlpha(poly, u.selOn);
   o.id = poly;
   return o;
 }
@@ -113,7 +116,7 @@ struct W { @builtin(position) p: vec4f, @location(0) @interpolate(flat) color: v
   let n = normalize(vec2f(d.y, -d.x) + vec2f(1e-9));
   let shade = 0.6 + 0.3 * abs(dot(n, normalize(vec2f(-1.0, -1.0))));
   let c = colorOf(poly);
-  o.color = vec4f(c.rgb * shade, 1.0);
+  o.color = vec4f(c.rgb * shade, 1.0) * selectionAlpha(poly, u.selOn);
   return o;
 }
 @fragment fn fsWall(v: W) -> @location(0) vec4f { return v.color; }
@@ -224,6 +227,7 @@ export class PolygonLayer implements Layer {
         storageEntry(3, V),
         storageEntry(4, V),
         storageEntry(5, V),
+        storageEntry(6, V),
       ],
     });
     const module = device.createShaderModule({ label: 'polygons', code: WGSL });
@@ -291,6 +295,8 @@ export class PolygonLayer implements Layer {
       empty,
     ];
     this.ramp = makeRamp(device, this.col.table);
+    this.selection = new Selection(device, emptyStorage(device));
+    if (this.pendingSelection !== undefined) this.selection.set(this.pendingSelection);
   }
 
   private heightValues(): Float32Array | undefined {
@@ -298,9 +304,20 @@ export class PolygonLayer implements Layer {
     return e && typeof e === 'object' && e.values ? Float32Array.from(e.values) : undefined;
   }
 
+  private selection?: Selection;
+  private selectionVersion = -1;
+  private pendingSelection?: Uint8Array | null;
+
+  /** Selected rows (a byte each, non-zero for selected), or null: unselected ones are dimmed. */
+  setSelection(mask: Uint8Array | null): void {
+    if (this.selection) this.selection.set(mask);
+    else this.pendingSelection = mask;
+    this.redraw();
+  }
+
   private bind(): GPUBindGroup {
     const gpu = this.gpu!;
-    if (!this.group || this.groupVersion !== gpu.arena.version) {
+    if (!this.group || this.groupVersion !== gpu.arena.version || this.selectionVersion !== this.selection!.version) {
       this.group = gpu.device.createBindGroup({
         layout: this.layout!,
         entries: [
@@ -310,9 +327,11 @@ export class PolygonLayer implements Layer {
           { binding: 3, resource: { buffer: this.gpuBuffers[5] } },
           { binding: 4, resource: { buffer: this.gpuBuffers[6] } },
           { binding: 5, resource: { buffer: this.gpuBuffers[7] } },
+          { binding: 6, resource: { buffer: this.selection!.buffer } },
         ],
       });
       this.groupVersion = gpu.arena.version;
+      this.selectionVersion = this.selection!.version;
     }
     return this.group;
   }
@@ -331,6 +350,7 @@ export class PolygonLayer implements Layer {
       ...premul(stroke),
       this.col.mode, slot, this.highlighted, f ? 1 : 0,
       f?.range[0] ?? 0, f?.range[1] ?? 0, mode, scale,
+      this.selection?.active ? 1 : 0, 0, 0, 0,
     ];
   }
 
@@ -374,6 +394,7 @@ export class PolygonLayer implements Layer {
   }
 
   destroy(): void {
+    this.selection?.destroy();
     for (const b of new Set(this.gpuBuffers)) b.destroy();
     this.ramp?.texture.destroy();
   }

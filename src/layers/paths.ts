@@ -6,6 +6,7 @@
 import { BLEND_ADD, BLEND_OVER, NO_STENCIL, VIEW_WGSL } from '../core/gpu.js';
 import { projectColumns, type Bounds } from '../core/mercator.js';
 import { describeRow, emptyStorage, makeRamp, PICK_TARGET, premul, resolveColor, storageEntry, storageOf, type Ramp, type ResolvedColor } from './common.js';
+import { Selection, selectionWgsl } from './common.js';
 import { autoId, extent, originOffset, RAMP_WGSL, type ColorSpec, type Frame, type Layer, type LayerGpu } from './layer.js';
 
 export interface PathData {
@@ -41,7 +42,7 @@ struct U {
   offset: vec2f, width: f32, opacity: f32,
   color: vec4f,
   hasColor: f32, trips: f32, time: f32, trail: f32,
-  slot: f32, highlight: f32, pad0: f32, pad1: f32,
+  slot: f32, highlight: f32, selOn: f32, pad1: f32,
 };
 @group(1) @binding(0) var<uniform> u: U;
 ${RAMP_WGSL}
@@ -50,6 +51,7 @@ ${RAMP_WGSL}
 @group(1) @binding(5) var<storage, read> segStart: array<u32>;
 @group(1) @binding(6) var<storage, read> segPath: array<u32>;
 @group(1) @binding(7) var<storage, read> colorT: array<f32>;
+${selectionWgsl(8)}
 struct V {
   @builtin(position) p: vec4f,
   @location(0) local: vec2f,
@@ -93,7 +95,7 @@ const C = array<vec2f, 6>(vec2f(0, -1), vec2f(1, -1), vec2f(0, 1), vec2f(0, 1), 
   var col = u.color;
   if (u.hasColor > 0.5) { col = ramp(colorT[path]); }
   if (f32(path) == u.highlight) { col = vec4f(mix(col.rgb, vec3f(1.0), 0.3), 1.0); }
-  o.color = vec4f(col.rgb * col.a, col.a) * u.opacity * fade;
+  o.color = vec4f(col.rgb * col.a, col.a) * u.opacity * fade * selectionAlpha(path, u.selOn);
   o.path = path;
   o.w = w;
   return o;
@@ -221,7 +223,7 @@ export class PathLayer implements Layer {
         { binding: 0, visibility: V | F, buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: 256 } },
         { binding: 1, visibility: V | F, texture: { sampleType: 'float' } },
         { binding: 2, visibility: V | F, sampler: { type: 'filtering' } },
-        ...[3, 4, 5, 6, 7].map((b) => storageEntry(b, V)),
+        ...[3, 4, 5, 6, 7, 8].map((b) => storageEntry(b, V)),
       ],
     });
     const module = device.createShaderModule({ label: 'paths', code: WGSL });
@@ -245,11 +247,24 @@ export class PathLayer implements Layer {
       empty,
     ];
     this.ramp = makeRamp(device, this.col.table);
+    this.selection = new Selection(device, emptyStorage(device));
+    if (this.pendingSelection !== undefined) this.selection.set(this.pendingSelection);
+  }
+
+  private selection?: Selection;
+  private selectionVersion = -1;
+  private pendingSelection?: Uint8Array | null;
+
+  /** Selected rows (a byte each, non-zero for selected), or null: unselected ones are dimmed. */
+  setSelection(mask: Uint8Array | null): void {
+    if (this.selection) this.selection.set(mask);
+    else this.pendingSelection = mask;
+    this.redraw();
   }
 
   private bind(): GPUBindGroup {
     const gpu = this.gpu!;
-    if (!this.group || this.groupVersion !== gpu.arena.version) {
+    if (!this.group || this.groupVersion !== gpu.arena.version || this.selectionVersion !== this.selection!.version) {
       this.group = gpu.device.createBindGroup({
         layout: this.layout!,
         entries: [
@@ -257,9 +272,11 @@ export class PathLayer implements Layer {
           { binding: 1, resource: this.ramp!.texture.createView() },
           { binding: 2, resource: this.ramp!.sampler },
           ...this.buffers.slice(0, 5).map((buffer, k) => ({ binding: 3 + k, resource: { buffer } })),
+          { binding: 8, resource: { buffer: this.selection!.buffer } },
         ],
       });
       this.groupVersion = gpu.arena.version;
+      this.selectionVersion = this.selection!.version;
     }
     return this.group;
   }
@@ -273,7 +290,7 @@ export class PathLayer implements Layer {
       ox, oy, o.width ?? 2, o.opacity ?? 0.9,
       ...premul(this.col.color),
       this.col.mode, trips ? 1 : 0, (o.time ?? 0) - this.timeBase, o.trail ?? Math.max(1e-6, span / 10),
-      slot, this.highlighted, 0, 0,
+      slot, this.highlighted, this.selection?.active ? 1 : 0, 0,
     ];
   }
 
@@ -324,6 +341,7 @@ export class PathLayer implements Layer {
   }
 
   destroy(): void {
+    this.selection?.destroy();
     for (const b of new Set(this.buffers)) b.destroy();
     this.ramp?.texture.destroy();
   }

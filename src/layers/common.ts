@@ -33,7 +33,7 @@ export function resolveColor(spec: ColorSpec | undefined, fallback: string): Res
   const t = new Float32Array(n);
   if (spec.categorical) {
     for (let i = 0; i < n; i++) t[i] = (((values[i] % 256) + 256) % 256) / 255;
-    return { mode: 1, color: [1, 1, 1, 1], t, table: bakeCategorical(), domain: [0, 255], stops: [], categorical: true };
+    return { mode: 1, color: [1, 1, 1, 1], t, table: bakeCategorical(spec.palette), domain: [0, 255], stops: [...(spec.palette ?? [])], categorical: true };
   }
   const stops = typeof spec.ramp === 'string' ? RAMPS[spec.ramp] : (spec.ramp ?? RAMPS.smalt);
   const domain = spec.domain ?? extent(values);
@@ -109,4 +109,59 @@ export function describeRow(columns: Readonly<Record<string, ArrayLike<unknown>>
   const out: Record<string, unknown> = {};
   if (columns) for (const [k, v] of Object.entries(columns)) out[k] = v[i];
   return out;
+}
+
+/**
+ * WGSL for a selection: a byte per row (1 selected, 0 not), packed four to a word, at `binding` of group 1.
+ * `selectionAlpha(i, on)` is 1 for selected rows (and for every row when `on` is 0), and dims the rest.
+ */
+export function selectionWgsl(binding: number): string {
+  return /* wgsl */ `
+@group(1) @binding(${binding}) var<storage, read> selection: array<u32>;
+fn selectionAlpha(i: u32, on: f32) -> f32 {
+  if (on < 0.5) { return 1.0; }
+  let byte = (selection[i >> 2u] >> ((i & 3u) * 8u)) & 0xffu;
+  return select(0.16, 1.0, byte > 0u);
+}
+`;
+}
+
+/**
+ * A layer's selection on the GPU: which rows are selected, a byte each. Set when the selection changes (a click, a
+ * filter elsewhere), not per frame. `buffer` is a small placeholder until the first selection; `version` changes when
+ * the buffer does, so the layer rebuilds its bind group.
+ */
+export class Selection {
+  buffer: GPUBuffer;
+  version = 0;
+  /** Whether any selection is set (otherwise every row draws at full strength). */
+  active = false;
+  private size = 0;
+
+  constructor(private readonly device: GPUDevice, private readonly placeholder: GPUBuffer) {
+    this.buffer = placeholder;
+  }
+
+  /** Selected rows (non-zero bytes), or null for no selection. */
+  set(mask: Uint8Array | null): void {
+    if (!mask) {
+      this.active = false;
+      return;
+    }
+    const bytes = Math.max(16, Math.ceil(mask.length / 4) * 4);
+    if (bytes > this.size) {
+      if (this.buffer !== this.placeholder) this.buffer.destroy();
+      this.buffer = this.device.createBuffer({ label: 'selection', size: bytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+      this.size = bytes;
+      this.version++;
+    }
+    const padded = mask.length % 4 ? new Uint8Array(Math.ceil(mask.length / 4) * 4) : mask;
+    if (padded !== mask) padded.set(mask);
+    this.device.queue.writeBuffer(this.buffer, 0, padded.buffer, padded.byteOffset, padded.byteLength);
+    this.active = true;
+  }
+
+  destroy(): void {
+    if (this.buffer !== this.placeholder) this.buffer.destroy();
+  }
 }

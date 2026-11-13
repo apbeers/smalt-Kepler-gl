@@ -11,6 +11,8 @@ core ── the contracts, projection, camera, colours, GPU setup
  └── basemap    tile source, tile renderer, labels, decoder    (core only)
 data       smaltdb, smaltcy, GeoJSON adapters                  (nothing)
 datasets   generators and their worker                         (nothing)
+visual     map visuals for hosts: catalogue, MapVisual          (core, map, layers, basemap, data)
+ └── hosts  adapters for one host each (smaltbi's plugin)        (visual only)
 ```
 
 The map, the layers and the basemap never import each other: they meet in `core/contract.ts`, so a layer from
@@ -36,6 +38,7 @@ somewhere else plugs into the map, and the basemap's parts can serve another ren
 | `@smaltworks/smaltgl/smaltcy` | `src/data/smaltcy.ts` | Cypher results as points and arcs |
 | `@smaltworks/smaltgl/geojson` | `src/data/geojson.ts` | GeoJSON as columns |
 | `@smaltworks/smaltgl/datasets` | `src/datasets/` | Generate sample data, in a worker or not |
+| `@smaltworks/smaltgl/visual` | `src/visual/` | Map visuals for hosts (BI tools, notebooks): a catalogue with roles and options, and `MapVisual` ([guide](./embedding)) |
 
 The examples below are type-checked by `test/docs-ts.test.ts`.
 

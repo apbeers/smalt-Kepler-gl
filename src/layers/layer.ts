@@ -24,6 +24,8 @@ export type ColorSpec =
       readonly ramp?: RampName | readonly string[];
       /** Values are category codes 0, 1, 2…: colour each from the categorical palette. */
       readonly categorical?: boolean;
+      /** The colours for categories (default: smaltgl's ten). */
+      readonly palette?: readonly string[];
       readonly reverse?: boolean;
     };
 

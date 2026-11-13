@@ -20,6 +20,9 @@ const ALLOWED: Record<string, readonly string[]> = {
   basemap: ['core', 'basemap'],
   data: ['data'],
   datasets: ['datasets'],
+  // Visuals for hosts compose the rest; host adapters use only the visual piece.
+  visual: ['core', 'map', 'layers', 'basemap', 'data', 'visual'],
+  hosts: ['visual'],
 };
 
 /** Layer implementations: none may import another (they share layer.ts, common.ts and triangulate.ts). */
@@ -93,6 +96,7 @@ describe('each entry point bundled on its own', () => {
     smaltdb: /^src\/(?!data\/)|^src\/data\/smaltcy\.ts$/,
     smaltcy: /^src\/(?!data\/)|^src\/data\/(smaltdb|geojson)\.ts$/,
     datasets: /^src\/(?!datasets\/)/,
+    visual: /^src\/(datasets|hosts)\//,
   };
   for (const name of LAYER_FILES)
     forbidden[name] = new RegExp(`^src/(map|basemap|data|datasets)/|^src/layers/(${LAYER_FILES.filter((n) => n !== name).join('|')})\\.ts$`);
@@ -117,7 +121,7 @@ describe('the entry point table', () => {
 
   it('package.json exports every entry, and only those (plus the workers)', () => {
     const want = Object.keys(entries).map((n) => (n === 'smaltgl' ? '.' : `./${n}`));
-    const have = Object.keys(pkg.exports).filter((k) => !/worker|package\.json/.test(k));
+    const have = Object.keys(pkg.exports).filter((k) => !/worker|plugin|package\.json/.test(k));
     expect(have.sort()).toEqual(want.sort());
   });
 

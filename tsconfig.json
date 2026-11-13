@@ -75,6 +75,9 @@
       ],
       "@smaltworks/smaltcy": [
         "./node_modules/@smaltworks/smaltcy/src/index.ts"
+      ],
+      "@smaltworks/smaltgl/visual": [
+        "./src/visual/index.ts"
       ]
     }
   },

@@ -11,7 +11,7 @@ const { browser, page, errors } = await open(s.url);
 await page.waitForFunction(() => window.ready === true, null, { timeout: 30000 }).catch((e) => { console.log(errors.join('\n')); throw e; });
 
 const coloured = ([r, g, b]) => !(r > 245 && g > 245 && b > 245);
-const expect = { scatter: 2000, heatmap: 2000, hexbin: 2000, grid: 2000, arcs: 1000, greatCircle: 300, paths: 1000, trips: 300, polygons: 5000, hexbin3d: 2000, polygons3d: 5000 };
+const expect = { selected: 200,  scatter: 2000, heatmap: 2000, hexbin: 2000, grid: 2000, arcs: 1000, greatCircle: 300, paths: 1000, trips: 300, polygons: 5000, hexbin3d: 2000, polygons3d: 5000 };
 for (const kind of Object.keys(expect)) {
   console.log(kind);
   await page.evaluate((k) => window.show(k), kind);
@@ -20,6 +20,16 @@ for (const kind of Object.keys(expect)) {
   const n = countPixels(await decodePng(png), coloured);
   check(n > expect[kind] / 4, `${kind} draws (${n} coloured samples)`);
 }
+
+// Selection: with every 50th point selected, far fewer pixels are strongly red (dimmed points still add up where
+// many overlap, so not fifty times fewer).
+const strongRed = ([r, g, b]) => r > 200 && g < 90 && b < 90;
+await page.evaluate((k) => window.show(k), 'selected');
+const sel = countPixels(await decodePng(await page.screenshot()), strongRed);
+await page.evaluate(() => window.map.getLayers()[0].setSelection(null));
+await page.evaluate(() => window.map.renderNow());
+const none = countPixels(await decodePng(await page.screenshot()), strongRed);
+check(none > 2000 && sel < none / 2, `selection dims the rest (${sel} strong red with a selection, ${none} without)`);
 
 // Picking: hover the centre of the polygon grid's middle square.
 await page.evaluate((k) => window.show(k), 'polygons');

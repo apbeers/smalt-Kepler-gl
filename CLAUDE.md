@@ -45,6 +45,11 @@ Playwright is installed globally in the cloud containers; don't run `playwright 
 - A new entry point goes in `scripts/entries.mjs`, package.json `exports`, tsconfig `paths`, and the table in
   `docs/guide/modules.md` (the modules test checks all four) and the README. The ```` ```ts ```` examples in the
   guides to the pieces are type-checked (`test/docs-ts.test.ts`).
+- **Visuals for hosts (ADR 0002):** `src/visual/` is the host-agnostic piece (catalogue of visuals with roles and
+  options, `buildVisual`, `themeFromCss`, `MapVisual`). `src/hosts/` has one adapter per host, importing only
+  `visual`; `src/hosts/smaltbi.ts` is built by `scripts/build-plugin.mjs` into `dist/smaltbi-plugin.js` (one file,
+  nothing to import), and `test/browser/smaltbi.mjs` loads it the way smaltbi does. The catalogue is a contract with
+  saved reports: add roles and options, don't rename them.
 - The tech demo's logic is plain TypeScript in `docs/.vitepress/theme/demo/` (layers for a dataset and settings,
   files, links), tested in `test/demo.test.ts`; `TechDemo.vue` is the page around it.
 - smaltdb and smaltcy are passed in and used through their public methods: smaltgl imports neither. No runtime

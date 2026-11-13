@@ -7,6 +7,7 @@ import { BLEND_ADD, BLEND_OVER, NO_STENCIL, VIEW_WGSL } from '../core/gpu.js';
 import { parseColor } from '../core/color.js';
 import { projectColumns, type Bounds, type Projected } from '../core/mercator.js';
 import { describeRow, emptyStorage, FILTER_WGSL, filterUniforms, makeRamp, PICK_TARGET, premul, resolveColor, storageEntry, storageOf, type Ramp, type ResolvedColor } from './common.js';
+import { Selection, selectionWgsl } from './common.js';
 import { autoId, originOffset, RAMP_WGSL, type ColorSpec, type Frame, type GpuFilter, type Layer, type LayerGpu } from './layer.js';
 
 export interface ArcData {
@@ -49,7 +50,7 @@ struct U {
   fa: vec3f, hasColor: f32,
   fb: vec3f, great: f32,
   camera: vec2f, animate: f32, speed: f32,
-  opacity: f32, slot: f32, highlight: f32, pad: f32,
+  opacity: f32, slot: f32, highlight: f32, selOn: f32,
 };
 @group(1) @binding(0) var<uniform> u: U;
 ${RAMP_WGSL}
@@ -58,6 +59,7 @@ ${RAMP_WGSL}
 @group(1) @binding(5) var<storage, read> colorT: array<f32>;
 @group(1) @binding(6) var<storage, read> filterA: array<f32>;
 @group(1) @binding(7) var<storage, read> filterB: array<f32>;
+${selectionWgsl(8)}
 ${FILTER_WGSL}
 const SEG = ${SEGMENTS}u;
 const PI = 3.14159265358979;
@@ -125,8 +127,9 @@ struct V {
   var c1 = u.toColor;
   if (u.hasColor > 0.5) { c0 = ramp(colorT[i]); c1 = c0; }
   if (f32(i) == u.highlight) { c0 = vec4f(mix(c0.rgb, vec3f(1.0), 0.3), 1.0); c1 = c0; }
-  o.color0 = c0;
-  o.color1 = c1;
+  let sa = selectionAlpha(i, u.selOn);
+  o.color0 = vec4f(c0.rgb, c0.a * sa);
+  o.color1 = vec4f(c1.rgb, c1.a * sa);
   o.id = i;
   return o;
 }
@@ -218,7 +221,7 @@ export class ArcLayer implements Layer {
     this.redraw = redraw;
     const { device } = gpu;
     const V = GPUShaderStage.VERTEX, F = GPUShaderStage.FRAGMENT;
-    this.layout = device.createBindGroupLayout({ entries: [...baseLayout(V | F), ...[3, 4, 5, 6, 7].map((b) => storageEntry(b, V))] });
+    this.layout = device.createBindGroupLayout({ entries: [...baseLayout(V | F), ...[3, 4, 5, 6, 7, 8].map((b) => storageEntry(b, V))] });
     const module = device.createShaderModule({ label: 'arcs', code: WGSL });
     const pl = device.createPipelineLayout({ bindGroupLayouts: [gpu.viewLayout, this.layout] });
     this.pipe = device.createRenderPipeline({
@@ -240,6 +243,8 @@ export class ArcLayer implements Layer {
       empty,
     ];
     this.ramp = makeRamp(device, this.col.table);
+    this.selection = new Selection(device, emptyStorage(device));
+    if (this.pendingSelection !== undefined) this.selection.set(this.pendingSelection);
   }
 
   setFilter(index: number, range: [number, number]): void {
@@ -248,9 +253,20 @@ export class ArcLayer implements Layer {
     this.redraw();
   }
 
+  private selection?: Selection;
+  private selectionVersion = -1;
+  private pendingSelection?: Uint8Array | null;
+
+  /** Selected rows (a byte each, non-zero for selected), or null: unselected ones are dimmed. */
+  setSelection(mask: Uint8Array | null): void {
+    if (this.selection) this.selection.set(mask);
+    else this.pendingSelection = mask;
+    this.redraw();
+  }
+
   private bind(): GPUBindGroup {
     const gpu = this.gpu!;
-    if (!this.group || this.groupVersion !== gpu.arena.version) {
+    if (!this.group || this.groupVersion !== gpu.arena.version || this.selectionVersion !== this.selection!.version) {
       this.group = gpu.device.createBindGroup({
         layout: this.layout!,
         entries: [
@@ -258,9 +274,11 @@ export class ArcLayer implements Layer {
           { binding: 1, resource: this.ramp!.texture.createView() },
           { binding: 2, resource: this.ramp!.sampler },
           ...this.buffers.slice(0, 5).map((buffer, k) => ({ binding: 3 + k, resource: { buffer } })),
+          { binding: 8, resource: { buffer: this.selection!.buffer } },
         ],
       });
       this.groupVersion = gpu.arena.version;
+      this.selectionVersion = this.selection!.version;
     }
     return this.group;
   }
@@ -279,7 +297,7 @@ export class ArcLayer implements Layer {
       fa0, fa1, fa2, this.col.mode,
       fb0, fb1, fb2, o.greatCircle ? 1 : 0,
       frame.camera.x, frame.camera.y, o.animate ? 1 : 0, speed,
-      o.opacity ?? 0.8, slot, this.highlighted, 0,
+      o.opacity ?? 0.8, slot, this.highlighted, this.selection?.active ? 1 : 0,
     ];
   }
 
@@ -310,6 +328,7 @@ export class ArcLayer implements Layer {
   }
 
   destroy(): void {
+    this.selection?.destroy();
     for (const b of new Set(this.buffers)) b.destroy();
     this.ramp?.texture.destroy();
   }

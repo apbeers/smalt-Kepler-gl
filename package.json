@@ -26,7 +26,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm test",
-    "build": "node scripts/build.mjs",
+    "build": "node scripts/build.mjs && node scripts/build-plugin.mjs",
     "test:browser": "node test/browser/run.mjs",
     "test:browser:quick": "node test/browser/run.mjs --quick",
     "bench": "node test/browser/bench.mjs",
@@ -108,9 +108,14 @@
       "types": "./dist/types/datasets/index.d.ts",
       "default": "./dist/datasets.js"
     },
+    "./visual": {
+      "types": "./dist/types/visual/index.d.ts",
+      "default": "./dist/visual.js"
+    },
     "./tile-worker": "./dist/smaltgl-tile-worker.js",
     "./data-worker": "./dist/smaltgl-data-worker.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./smaltbi-plugin": "./dist/smaltbi-plugin.js"
   },
   "files": [
     "dist",

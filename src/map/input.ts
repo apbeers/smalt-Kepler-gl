@@ -47,7 +47,12 @@ export function attachInput(el: HTMLElement, camera: Camera, cb: InputCallbacks)
 
   const down = (e: PointerEvent) => {
     stopMomentum();
-    el.setPointerCapture(e.pointerId);
+    // Capture can fail (a synthetic event, a pointer already gone): dragging still works without it.
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {
+      // Not captured.
+    }
     const [x, y] = local(e);
     pointers.set(e.pointerId, { x, y });
     dragging = true;

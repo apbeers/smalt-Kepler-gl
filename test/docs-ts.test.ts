@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const PAGES = ['docs/guide/modules.md', 'docs/guide/custom-layers.md'];
+const PAGES = ['docs/guide/modules.md', 'docs/guide/custom-layers.md', 'docs/guide/embedding.md'];
 
 describe('TypeScript in the guides', () => {
   it('type-checks', () => {

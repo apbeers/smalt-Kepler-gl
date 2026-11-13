@@ -23,6 +23,15 @@ const make: Record<string, () => Layer> = {
     const c = cloud(20000);
     return scatter({ id: 'l', data: c, color: { values: c.v, ramp: 'ember' }, radius: 3, properties: { value: c.v } });
   },
+  selected: () => {
+    // Every point red; then only every 50th selected: the rest are dimmed.
+    const c = cloud(20000);
+    const l = scatter({ id: 'l', data: c, color: '#ff0000', radius: 3 });
+    const mask = new Uint8Array(20000);
+    for (let i = 0; i < mask.length; i += 50) mask[i] = 1;
+    l.setSelection(mask);
+    return l;
+  },
   heatmap: () => heatmap({ id: 'l', data: cloud(50000), radius: 25 }),
   hexbin: () => {
     const c = cloud(50000);

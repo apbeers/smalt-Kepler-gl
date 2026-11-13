@@ -96,6 +96,7 @@ export default defineConfig({
           { text: 'Performance', link: '/guide/performance' },
           { text: 'Using the pieces', link: '/guide/modules' },
           { text: 'Writing a layer', link: '/guide/custom-layers' },
+          { text: 'In other apps (smaltbi)', link: '/guide/embedding' },
           { text: 'Tech demo', link: '/demo' },
         ],
       },
@@ -125,6 +126,7 @@ export default defineConfig({
         items: [
           { text: 'Decisions', link: '/adr/' },
           { text: '0001 smaltgl', link: '/adr/0001-smaltgl' },
+          { text: '0002 Visuals for hosts', link: '/adr/0002-visuals-for-hosts' },
         ],
       },
     ],

@@ -7,6 +7,7 @@ const quick = process.argv.includes('--quick') ? ['--quick'] : [];
 run('test/browser/smoke.mjs');
 run('test/browser/layers.mjs');
 run('test/browser/basemap.mjs');
+run('test/browser/smaltbi.mjs');
 execFileSync(process.execPath, ['node_modules/vitepress/bin/vitepress.js', 'build', 'docs'], { stdio: 'inherit' });
 run('test/browser/docs.mjs');
 run('test/browser/demo.mjs', ...quick);
